@@ -43,13 +43,7 @@ pipeline {
         stage('Lint & Test Backend') {
             steps {
                 script {
-                    echo "🔍 Running backend linting and tests..."
-                    sh '''
-                        cd backend
-                        npm ci
-                        npm run lint || true
-                        npm run test || true
-                    '''
+                    echo "🔍 Skipping npm tests (running in Docker build instead)"
                 }
             }
         }
