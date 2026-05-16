@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Subscription Hub</title>
+    <meta name="description" content="Track and manage all your subscriptions in one place. Monitor monthly costs, categories, and upcoming billing dates.">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="stylesheet" href="style.css">
 </head>
@@ -15,6 +16,7 @@
 
     <div class="container">
 
+        <!-- Edit Modal -->
         <div id="edit-modal" class="modal-container hidden">
             <div class="modal">
                 <h3>Edit Subscription</h3>
@@ -43,8 +45,10 @@
                 </form>
             </div>
         </div>
+
         <h2>Dashboard</h2>
 
+        <!-- Client-side live summary -->
         <div class="summary-container">
             <div>
                 <h4>Monthly Total</h4>
@@ -60,14 +64,41 @@
             </div>
         </div>
 
+        <!-- Server-Side Analytics Panel -->
+        <h3>
+            Server Analytics
+            <span class="server-badge">&#9729; Cloud Function</span>
+        </h3>
+        <div id="server-report-panel" class="server-panel">
+            <div class="server-grid">
+                <div class="server-stat">
+                    <h4>Monthly Spend</h4>
+                    <p id="server-monthly" class="summary-value">—</p>
+                </div>
+                <div class="server-stat">
+                    <h4>Yearly Equivalent</h4>
+                    <p id="server-yearly" class="summary-value">—</p>
+                </div>
+            </div>
+            <div class="upcoming-section">
+                <h4>Upcoming Dues (Server-Computed)</h4>
+                <ul id="server-upcoming" class="upcoming-list">
+                    <li>Loading…</li>
+                </ul>
+            </div>
+            <div class="server-footer">
+                <small id="server-timestamp">Waiting for server response…</small>
+                <button id="refresh-report-btn" class="btn-refresh">&#8635; Refresh</button>
+            </div>
+        </div>
+
         <h3>Cost Breakdown</h3>
         <div class="chart-container">
             <canvas id="cost-chart"></canvas>
         </div>
 
         <h3>Your Subscriptions</h3>
-        <ul id="subscription-list" class="list">
-            </ul>
+        <ul id="subscription-list" class="list"></ul>
 
         <h3>Add New Subscription</h3>
         <form id="add-sub-form">

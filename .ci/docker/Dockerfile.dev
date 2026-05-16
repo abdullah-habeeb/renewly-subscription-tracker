@@ -1,0 +1,25 @@
+# Development Dockerfile - includes hot reload, debugging tools
+FROM node:22-slim
+
+WORKDIR /app
+
+# Install development tools
+RUN apt-get update && apt-get install -y \
+    curl \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy package files
+COPY backend/package*.json ./
+
+# Install all dependencies (including dev)
+RUN npm install
+
+# Copy source code
+COPY backend/src ./src
+
+# Expose ports
+EXPOSE 5000 9229
+
+# Run with nodemon for hot reload
+CMD ["npm", "run", "dev"]

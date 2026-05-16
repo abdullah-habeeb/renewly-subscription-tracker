@@ -1,144 +1,576 @@
-# Subscription Tracker
+# 🎯 Subscription Tracker
 
-The **Subscription Tracker** is a web application designed to help users manage their subscriptions, track costs, and view analytics. It leverages Firebase for backend services, including Authentication, Firestore, Hosting, and Functions, and provides a responsive and user-friendly interface for managing subscription data.
-
----
-
-## Features
-
-- **User Authentication**: Secure login and signup using Firebase Authentication.
-- **Subscription Management**:
-  - Add, edit, and delete subscriptions.
-  - Track subscription costs, categories, and billing cycles.
-- **Real-Time Updates**: Changes to subscription data are reflected instantly using Firestore's real-time capabilities.
-- **Analytics Dashboard**:
-  - View total monthly costs and active subscriptions.
-  - Visualize subscription costs by category using charts.
-- **Responsive Design**: Works seamlessly on desktop and mobile devices.
-- **Local Development Support**: Firebase emulators for testing services locally.
+A modern containerized subscription management system with **Docker + Jenkins CI/CD**.
 
 ---
 
-## System Architecture
+## 📋 Quick Navigation
 
-### **Frontend**
-- **HTML, CSS, JavaScript**: Provides the user interface and handles client-side logic.
-- **Chart.js**: Used for rendering subscription cost breakdown charts.
-- **Firebase SDK**: Integrates Firebase services for authentication and Firestore.
-
-### **Backend**
-- **Firebase Authentication**: Manages user authentication.
-- **Firebase Firestore**: Stores subscription data in a NoSQL database.
-- **Firebase Hosting**: Hosts the static frontend files.
-- **Firebase Functions**: (Optional) Can be used for server-side logic, such as sending reminders or performing scheduled tasks.
+- [🚀 Quick Start](#-quick-start)
+- [🏗️ Architecture](#-architecture)
+- [💻 Development](#-development-setup)
+- [🌍 Production](#-production-deployment)
+- [🔄 CI/CD Pipeline](#-cicd-pipeline)
+- [📡 API Reference](#-api-documentation)
+- [🐳 Docker Guide](#-docker-commands)
 
 ---
 
-## Project Structure
+## 🎯 Overview
 
-```plaintext
-subscription_tracker/
-├── firebase.json          # Firebase configuration file
-├── firestore.rules        # Firestore security rules
-├── storage.rules          # Firebase Storage security rules
-├── public/                # Static files for hosting
-│   ├── index.html         # Main dashboard
-│   ├── login.html         # Login and signup page
-│   ├── style.css          # App styling
-│   └── js/                # JavaScript files
-│       ├── main.js        # Core app logic
-│       ├── auth.js        # Authentication logic
-│       └── firebase-config.js # Firebase initialization
-├── functions/             # Firebase Functions (optional)
-│   ├── index.js           # Cloud functions entry point
-│   └── package.json       # Functions dependencies
-└── README.md              # Project documentation
+The **Subscription Tracker** is a containerized web application for managing subscriptions, tracking costs, and viewing analytics with **Docker containerization** and **Jenkins CI/CD automation** as primary deployment mechanisms.
 
+### ✨ Features
 
+✅ **Containerized** - Docker-first architecture  
+✅ **Subscription Management** - Add, edit, delete, track  
+✅ **Spending Analytics** - Real-time reports & breakdowns  
+✅ **Automated CI/CD** - Jenkins pipeline integration  
+✅ **Environment Separation** - Dev, staging, production  
+✅ **Multi-Service** - Backend API, Frontend, Database  
+✅ **Health Monitoring** - Built-in health checks & smoke tests  
+✅ **Production Ready** - Security, logging, monitoring  
 
-## Installation and Setup
-1. Clone the Repository
-Clone the project to your local machine:
+---
 
-2. Install Firebase CLI
-Ensure you have the Firebase CLI installed:
+## 🏗️ Architecture
 
-3. Login to Firebase
-Log in to your Firebase account:
+### Technology Stack
 
-4. Initialize Firebase
-If you need to reinitialize Firebase for your project:
+| Layer | Technology | Purpose |
+|-------|-----------|---------|
+| **Backend** | Node.js 22 + Express | REST API for subscriptions |
+| **Frontend** | HTML/CSS/JS + Nginx | Static web interface |
+| **Database** | PostgreSQL 15 | Data persistence |
+| **Containers** | Docker | Application packaging |
+| **Orchestration** | Docker Compose | Multi-container management |
+| **CI/CD** | Jenkins | Automated testing & deployment |
+| **SCM** | Git | Version control |
 
-Select the following services:
+### Project Structure
 
-Hosting: Configure Firebase Hosting for your static files.
-Firestore: Enable Firestore for subscription data.
-Authentication: Enable Firebase Authentication.
-Functions: (Optional) Enable Firebase Functions.
+```
+subscription-tracker/
+├── .ci/                              # CI/CD Configuration (PRIMARY)
+│   ├── docker/
+│   │   ├── Dockerfile.dev           # Development backend
+│   │   ├── Dockerfile.prod          # Production backend
+│   │   ├── Dockerfile.frontend      # Frontend nginx
+│   │   ├── nginx.conf               # Nginx config
+│   │   └── .dockerignore
+│   ├── jenkins/
+│   │   ├── Jenkinsfile              # Pipeline definition
+│   │   └── scripts/
+│   │       ├── deploy.sh            # Deploy automation
+│   │       ├── health-check.sh      # Health validation
+│   │       ├── smoke-tests.sh       # Integration tests
+│   │       └── rollback.sh          # Rollback procedures
+│   └── environments/
+│       ├── dev.env
+│       ├── staging.env
+│       └── prod.env
+├── backend/                          # Express.js API
+│   ├── src/
+│   │   └── server.js                # Main API
+│   ├── package.json
+│   └── .dockerignore
+├── frontend/                         # Static files
+│   ├── index.html
+│   ├── login.html
+│   ├── style.css
+│   └── js/
+├── docker-compose.yml               # Dev orchestration
+├── docker-compose.prod.yml          # Prod orchestration
+├── Makefile                         # Command shortcuts (PRIMARY)
+└── README.md                        # This file
+```
 
-5. Install Dependencies
-Install dependencies for Firebase Functions:
+---
 
-## Local Development
-1. Start Firebase Emulators
-Run the Firebase emulators to test the app locally:
+## 🚀 Quick Start
 
-Hosting: http://localhost:5000
-Emulator UI: http://localhost:4000
-2. Access the App
-Open your browser and navigate to http://localhost:5000 to view the app.
+### Prerequisites
 
-## Deployment
-1. Deploy to Firebase
-Deploy the app to Firebase Hosting:
+```bash
+✓ Docker & Docker Compose
+✓ Make command-line tool
+✓ Git
+✓ Ports 80, 5000, 5432 available
+```
 
-2. Verify Deployment
-Once deployed, Firebase will provide a hosting URL. Open the URL in your browser to access the app.
+### 1. Clone & Enter Directory
 
-Firebase Configuration
-firebase.json
-The firebase.json file configures Firebase services:
+```bash
+git clone <your-repo-url>
+cd subscription-tracker
+```
 
-## Hosting:
-Serves static files from the public directory.
-Rewrites all routes to index.html for SPA support.
-Emulators:
-Authentication: Port 9099
-Firestore: Port 8081
-Hosting: Port 5000
-Functions: Port 5001
-Emulator UI: Port 4000
-Firestore Rules
-The firestore.rules file ensures data security:
+### 2. Start Development
 
-## Technologies Used
-Frontend:
-HTML, CSS, JavaScript
-Chart.js
-Backend:
-Firebase Authentication
-Firebase Firestore
-Firebase Hosting
-Firebase Functions (Optional)
-Contributing
-Contributions are welcome! To contribute:
+```bash
+make dev
+```
 
-Fork the repository.
-Create a new branch:
-Commit your changes:
-Push to the branch:
-Open a pull request.
+This automatically:
+- Builds all Docker images
+- Starts backend, frontend, database
+- Creates network & volumes
+- Initializes database
 
-##License
-This project is licensed under the MIT License.
+### 3. Access Services
 
-##Contact
-For any questions or feedback, feel free to reach out:
+```
+🌐 Frontend:  http://localhost
+📡 Backend:   http://localhost:5000
+🔍 Health:    http://localhost:5000/health
+📊 Database:  localhost:5432 (devuser/devpass)
+```
 
-Email: [itzabada19@gmail.com]
-GitHub: [https://github.com/abdullah-habeeb]
+### 4. Verify Everything
 
-##Acknowledgments
-Firebase for providing a robust backend platform.
-Chart.js for easy-to-use charting tools.
-Open-source libraries and tools that made this project possible.
+```bash
+make health-check
+make smoke-tests
+```
+
+### 5. View Logs (in new terminal)
+
+```bash
+make logs
+```
+
+---
+
+## 💻 Development Setup
+
+### Available Commands
+
+```bash
+make help              # Show all available commands
+make dev               # Start development environment
+make prod              # Start production environment
+make build             # Build all Docker images
+make test              # Run backend tests
+make lint              # Run linting
+make health-check      # Validate services
+make smoke-tests       # Run integration tests
+make logs              # View live logs
+make stop              # Stop all containers
+make clean             # Remove all containers & volumes
+make restart           # Restart services
+make db-shell          # Access PostgreSQL shell
+```
+
+### Backend Development
+
+```bash
+# SSH into backend container
+make backend-shell
+
+# View backend logs
+make backend-logs
+
+# Run tests
+make test
+
+# Run linting
+make lint
+```
+
+### Code Organization
+
+**Backend** (`backend/src/server.js`):
+- Express.js API server
+- REST endpoints for subscriptions
+- Health checks & error handling
+- CORS & middleware setup
+
+**Frontend** (`index.html`, `js/`):
+- HTML/CSS/JS static files
+- API integration
+- User interface
+
+---
+
+## 🌍 Production Deployment
+
+### Prerequisites
+
+- [ ] Jenkins server running
+- [ ] Docker registry access (Docker Hub, ECR, etc.)
+- [ ] PostgreSQL server
+- [ ] SSL certificates
+- [ ] Domain name
+
+### Setup Jenkins
+
+**1. Create Pipeline Job**
+- New Job → Pipeline
+- Configure Git repository
+- Set script path: `.ci/jenkins/Jenkinsfile`
+
+**2. Add Credentials**
+
+Go to Jenkins → Manage Jenkins → Credentials → Add:
+
+| ID | Type | Example |
+|---|---|---|
+| `docker-registry-url` | Secret Text | `docker.io` |
+| `docker-credentials` | Username/Password | Docker Hub login |
+| `postgres-password` | Secret Text | DB password |
+
+**3. Configure Environment** (`.ci/environments/prod.env`)
+
+```bash
+NODE_ENV=production
+PORT=5000
+DATABASE_URL=postgresql://user:pass@prod-db.example.com:5432/subscription_tracker_prod
+JWT_SECRET=your-secure-key
+CORS_ORIGIN=https://subscriptiontracker.example.com
+```
+
+**4. Deploy**
+
+```bash
+git add .
+git commit -m "Deploy to production"
+git push origin main   # Triggers Jenkins automatically
+```
+
+Jenkins pipeline will:
+1. Checkout code
+2. Run tests & linting
+3. Build Docker images
+4. Scan for vulnerabilities
+5. Push to registry
+6. Deploy to production
+7. Run health checks & smoke tests
+
+---
+
+## 🔄 CI/CD Pipeline
+
+### Pipeline Flow
+
+```
+┌─────────────────────────┐
+│  Git Push to Repository │
+└────────────┬────────────┘
+             │
+      ┌──────▼──────────────────┐
+      │ Jenkins Detects Change  │ (GitHub webhook)
+      └──────┬──────────────────┘
+             │
+      ┌──────▼──────────────┐
+      │ Checkout Code       │ Stage 1
+      └──────┬──────────────┘
+             │
+      ┌──────▼──────────────────────┐
+      │ Lint & Test Backend         │ Stage 2
+      └──────┬──────────────────────┘
+             │
+      ┌──────▼──────────────────────┐
+      │ Build Docker Images         │ Stage 3
+      └──────┬──────────────────────┘
+             │
+      ┌──────▼──────────────────────┐
+      │ Security Scan (Trivy)       │ Stage 4 (main branch only)
+      └──────┬──────────────────────┘
+             │
+      ┌──────▼──────────────────────┐
+      │ Push to Registry            │ Stage 5 (main branch only)
+      └──────┬──────────────────────┘
+             │
+      ┌──────▼──────────────────────┐
+      │ Deploy to Production        │ Stage 6 (main branch only)
+      │ docker-compose up -d        │
+      └──────┬──────────────────────┘
+             │
+      ┌──────▼──────────────────────┐
+      │ Health Checks               │ Stage 7
+      └──────┬──────────────────────┘
+             │
+      ┌──────▼──────────────────────┐
+      │ Smoke Tests                 │ Stage 8
+      └──────┬──────────────────────┘
+             │
+        ┌────▼─────────────────┐
+        │  ✅ SUCCESS/❌ FAILURE │
+        └──────────────────────┘
+```
+
+### Trigger Conditions
+
+| Event | Action |
+|-------|--------|
+| Push to `develop/*` | Build & Test (no deploy) |
+| Push to `staging/*` | Build & Test & Deploy to Staging |
+| Push to `main` | Full pipeline including production |
+| Every 5 minutes | Poll SCM as fallback |
+
+---
+
+## 📡 API Documentation
+
+### Base URLs
+
+```
+Development:  http://localhost:5000
+Production:   https://subscriptiontracker.example.com/api
+```
+
+### Authentication
+
+All endpoints require `x-user-id` header:
+
+```bash
+curl -H "x-user-id: user-123" http://localhost:5000/api/subscriptions
+```
+
+### Endpoints
+
+#### Health Check
+```bash
+GET /health
+# Response: { "status": "healthy", "timestamp": "..." }
+```
+
+#### Get Subscriptions
+```bash
+GET /api/subscriptions
+Headers: x-user-id: user-123
+# Returns array of user's subscriptions
+```
+
+#### Create Subscription
+```bash
+POST /api/subscriptions
+Headers: x-user-id: user-123, Content-Type: application/json
+Body: {
+  "name": "Netflix",
+  "amount": 15.99,
+  "category": "Entertainment",
+  "billingCycle": "monthly",
+  "nextDueDate": "2024-06-15"
+}
+```
+
+#### Update Subscription
+```bash
+PUT /api/subscriptions/:id
+Headers: x-user-id: user-123, Content-Type: application/json
+Body: { "amount": 19.99 }
+```
+
+#### Delete Subscription
+```bash
+DELETE /api/subscriptions/:id
+Headers: x-user-id: user-123
+```
+
+#### Get Spending Report
+```bash
+GET /api/spending-report
+Headers: x-user-id: user-123
+# Returns analytics: monthlyTotal, yearlyEquivalent, categoryBreakdown, etc.
+```
+
+---
+
+## 🐳 Docker Commands
+
+### Build Images
+
+```bash
+# Build all images
+docker-compose build
+
+# Build specific service
+docker-compose build backend
+docker-compose build frontend
+
+# Rebuild without cache
+docker-compose build --no-cache
+```
+
+### Run Services
+
+```bash
+# Start in foreground
+docker-compose up
+
+# Start in background
+docker-compose up -d
+
+# Stop services
+docker-compose down
+
+# Stop and remove volumes
+docker-compose down -v
+```
+
+### View Logs
+
+```bash
+# All services
+docker-compose logs
+
+# Specific service
+docker-compose logs backend
+docker-compose logs frontend
+
+# Follow logs live
+docker-compose logs -f
+docker-compose logs -f backend
+```
+
+### Execute Commands
+
+```bash
+# Shell into container
+docker-compose exec backend bash
+docker-compose exec frontend sh
+
+# Run specific command
+docker-compose exec backend npm test
+docker-compose exec backend npm run lint
+```
+
+### Useful Docker Utilities
+
+```bash
+# List containers
+docker ps
+docker ps -a
+
+# View container details
+docker inspect <container-id>
+
+# Copy files
+docker cp <container-id>:/app/file.txt ./
+
+# Remove containers
+docker rm <container-id>
+
+# Remove images
+docker rmi <image-id>
+
+# Clean system
+docker system prune -a -v
+```
+
+---
+
+## 🔧 Troubleshooting
+
+### Services Won't Start
+
+**Port already in use:**
+```bash
+lsof -i :5000
+kill -9 <PID>
+```
+
+**Docker daemon not running:**
+```bash
+# macOS
+open -a Docker
+
+# Linux
+sudo systemctl start docker
+```
+
+### Database Issues
+
+```bash
+# Check PostgreSQL
+docker ps | grep postgres
+
+# Access database shell
+make db-shell
+
+# Reset database
+make db-reset
+```
+
+### API Not Responding
+
+```bash
+# Check backend container
+make backend-logs
+
+# Manual health check
+curl http://localhost:5000/health
+
+# Check network
+docker network ls
+docker network inspect <network-name>
+```
+
+### Build Failures
+
+```bash
+# Rebuild without cache
+docker-compose build --no-cache
+
+# View detailed build output
+docker-compose build --progress=plain backend
+```
+
+---
+
+## 📚 Documentation Files
+
+- `.ci/jenkins/Jenkinsfile` - Jenkins pipeline definition
+- `.ci/docker/Dockerfile.*` - Docker image definitions
+- `.ci/environments/*.env` - Environment configurations
+- `.ci/jenkins/scripts/*.sh` - Deployment scripts
+
+---
+
+## 🤝 Git Workflow
+
+```bash
+# Clone repository
+git clone <repo-url>
+cd subscription-tracker
+
+# Create feature branch
+git checkout -b feature/amazing-feature
+
+# Make changes
+# ...
+
+# Commit
+git add .
+git commit -m "Add amazing feature"
+
+# Push
+git push origin feature/amazing-feature
+
+# Create Pull Request on GitHub
+
+# Merge to develop → Jenkins tests
+# Merge to main → Full deployment pipeline
+```
+
+---
+
+## 📄 License
+
+MIT License
+
+---
+
+## 📞 Support
+
+1. Check [Troubleshooting](#-troubleshooting) section
+2. Review logs: `make logs`
+3. Run health checks: `make health-check`
+4. Check documentation in `.ci/` directory
+
+---
+
+**Status**: ✅ Docker First | ✅ Jenkins Automated | ✅ Production Ready  
+**Last Updated**: May 15, 2026  
+**Version**: 2.0.0 (Docker/Jenkins Restructured)

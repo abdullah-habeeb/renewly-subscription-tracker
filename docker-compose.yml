@@ -1,0 +1,61 @@
+version: '3.8'
+
+services:
+  # Backend API Service
+  backend:
+    build:
+      context: .
+      dockerfile: .ci/docker/Dockerfile.dev
+    container_name: subscription-tracker-backend-dev
+    ports:
+      - "5000:5000"
+      - "9229:9229"  # Node debugging port
+    environment:
+      - NODE_ENV=development
+      - PORT=5000
+      - LOG_LEVEL=debug
+    volumes:
+      - ./backend/src:/app/src
+      - /app/node_modules
+    networks:
+      - app-network
+    restart: unless-stopped
+    command: npm run dev
+
+  # Frontend Service
+  frontend:
+    build:
+      context: .
+      dockerfile: .ci/docker/Dockerfile.frontend
+    container_name: subscription-tracker-frontend-dev
+    ports:
+      - "80:80"
+      - "3000:3000"
+    depends_on:
+      - backend
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  # PostgreSQL Database (optional - for future real DB integration)
+  postgres:
+    image: postgres:15-alpine
+    container_name: subscription-tracker-postgres-dev
+    environment:
+      POSTGRES_USER: devuser
+      POSTGRES_PASSWORD: devpass
+      POSTGRES_DB: subscription_tracker_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data-dev:/var/lib/postgresql/data
+    networks:
+      - app-network
+    restart: unless-stopped
+
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  postgres-data-dev:

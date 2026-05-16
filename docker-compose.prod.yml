@@ -1,0 +1,76 @@
+version: '3.8'
+
+services:
+  # Backend API Service (Production)
+  backend:
+    build:
+      context: .
+      dockerfile: .ci/docker/Dockerfile.prod
+    container_name: subscription-tracker-backend-prod
+    env_file:
+      - .ci/environments/prod.env
+    ports:
+      - "5000:5000"
+    environment:
+      - NODE_ENV=production
+    networks:
+      - app-network
+    restart: always
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+  # Frontend Service (Production)
+  frontend:
+    build:
+      context: .
+      dockerfile: .ci/docker/Dockerfile.frontend
+    container_name: subscription-tracker-frontend-prod
+    ports:
+      - "80:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - app-network
+    restart: always
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+  # PostgreSQL Database (Production)
+  postgres:
+    image: postgres:15-alpine
+    container_name: subscription-tracker-postgres-prod
+    env_file:
+      - .ci/environments/prod.env
+    environment:
+      POSTGRES_USER: produser
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-securepassword}
+      POSTGRES_DB: subscription_tracker_prod
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data-prod:/var/lib/postgresql/data
+    networks:
+      - app-network
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U produser"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  postgres-data-prod:
+    driver: local
