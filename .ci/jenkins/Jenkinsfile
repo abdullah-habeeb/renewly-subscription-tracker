@@ -31,15 +31,9 @@ pipeline {
         stage('Initialization') {
             steps {
                 script {
-                    echo """
-                    ╔════════════════════════════════════════════════════════════╗
-                    ║          SUBSCRIPTION TRACKER CI/CD PIPELINE               ║
-                    ╠════════════════════════════════════════════════════════════╣
-                    ║ Build Number:   ${BUILD_NUMBER}                               ║
-                    ║ Git Branch:     ${GIT_BRANCH}                             ║
-                    ║ Timestamp:      $(date)                         ║
-                    ╚════════════════════════════════════════════════════════════╝
-                    """
+                    echo '====== SUBSCRIPTION TRACKER CI/CD PIPELINE ======'
+                    echo "Build Number: ${BUILD_NUMBER}"
+                    echo "Git Branch: ${GIT_BRANCH}"
                     
                     checkout scm
                 }
