@@ -56,40 +56,49 @@ function listenForSubscriptions(user) {
   });
 }
 
-// --- Server-Side Analytics (Express API call via Nginx proxy) ---
+// --- Server-Side Analytics (Calculate from local Firestore data) ---
 async function fetchServerReport() {
   if (!serverReportPanel) return;
   serverReportPanel.classList.remove('report-error');
-  serverTimestampEl.textContent = 'Fetching from server…';
+  serverTimestampEl.textContent = 'Calculating analytics…';
 
   try {
-    // Call backend through Nginx proxy (relative path)
-    const response = await fetch('/api/spending-report', {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-user-id': currentUser.uid, // Pass user ID from Firebase auth
-      },
+    // Calculate from allSubscriptions (Firestore data we already have)
+    let monthlyTotal = 0;
+    let yearlyEquivalent = 0;
+    const upcomingDues = [];
+
+    allSubscriptions.forEach((sub) => {
+      const monthlyCost =
+        sub.billingCycle === 'monthly' ? sub.amount : sub.amount / 12;
+
+      monthlyTotal += monthlyCost;
+      yearlyEquivalent +=
+        sub.billingCycle === 'yearly' ? sub.amount : sub.amount * 12;
+
+      upcomingDues.push({
+        name: sub.name,
+        nextDueDate: sub.nextDueDate,
+        amount: sub.amount,
+        billingCycle: sub.billingCycle,
+      });
     });
 
-    if (!response.ok) {
-      throw new Error(`API error: ${response.status}`);
-    }
+    upcomingDues.sort((a, b) => new Date(a.nextDueDate) - new Date(b.nextDueDate));
 
-    const report = await response.json();
+    // Display the calculated report
+    serverMonthlyEl.textContent = `₹${monthlyTotal.toFixed(2)}`;
+    serverYearlyEl.textContent = `₹${yearlyEquivalent.toFixed(2)}`;
 
-    serverMonthlyEl.textContent = `₹${report.monthlyTotal.toFixed(2)}`;
-    serverYearlyEl.textContent = `₹${report.yearlyEquivalent.toFixed(2)}`;
-
-    const ts = new Date(report.generatedAt);
-    serverTimestampEl.textContent = `Generated at ${ts.toLocaleTimeString('en-IN')} on ${ts.toLocaleDateString('en-IN')}`;
+    const ts = new Date();
+    serverTimestampEl.textContent = `Calculated at ${ts.toLocaleTimeString('en-IN')} on ${ts.toLocaleDateString('en-IN')}`;
 
     // Upcoming dues list
     serverUpcomingEl.innerHTML = '';
-    if (report.upcomingDues.length === 0) {
+    if (upcomingDues.length === 0) {
       serverUpcomingEl.innerHTML = '<li>No upcoming dues.</li>';
     } else {
-      report.upcomingDues.forEach(due => {
+      upcomingDues.slice(0, 5).forEach(due => {
         const li = document.createElement('li');
         const dueDate = new Date(due.nextDueDate + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
         li.innerHTML = `<span>${due.name}</span><span>₹${Number(due.amount).toFixed(2)} — ${dueDate}</span>`;
@@ -97,8 +106,8 @@ async function fetchServerReport() {
       });
     }
   } catch (err) {
-    console.error("Server API error:", err);
-    serverTimestampEl.textContent = 'Could not reach server. Make sure backend is running.';
+    console.error("Analytics error:", err);
+    serverTimestampEl.textContent = 'Error calculating analytics';
     serverReportPanel.classList.add('report-error');
   }
 }
