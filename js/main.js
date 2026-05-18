@@ -2,8 +2,7 @@
 
 import { onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/9.15.0/firebase-auth.js";
 import { collection, addDoc, onSnapshot, query, where, doc, deleteDoc, orderBy, updateDoc } from "https://www.gstatic.com/firebasejs/9.15.0/firebase-firestore.js";
-import { httpsCallable } from "https://www.gstatic.com/firebasejs/9.15.0/firebase-functions.js";
-import { auth, db, functions } from './firebase-config.js';
+import { auth, db } from './firebase-config.js';
 
 let currentUser = null;
 let costChart;
@@ -28,9 +27,6 @@ const serverYearlyEl = document.getElementById('server-yearly');
 const serverTimestampEl = document.getElementById('server-timestamp');
 const serverUpcomingEl = document.getElementById('server-upcoming');
 const refreshReportBtn = document.getElementById('refresh-report-btn');
-
-// --- Cloud Function reference ---
-const getSpendingReport = httpsCallable(functions, 'getSpendingReport');
 
 // --- Auth State Listener ---
 onAuthStateChanged(auth, (user) => {
