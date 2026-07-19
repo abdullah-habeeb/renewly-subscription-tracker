@@ -1,9 +1,9 @@
-# Render Blueprint — deploys the Sublet backend on the free plan.
+# Render Blueprint — deploys the Renewly backend on the free plan.
 # In Render: New → Blueprint → connect this repo. Values marked sync: false
 # are secrets you paste once in the Render dashboard (see README → Deploying).
 services:
   - type: web
-    name: sublet-api
+    name: renewly-api
     runtime: node
     plan: free
     rootDir: backend
@@ -24,7 +24,7 @@ services:
       - key: GOOGLE_CLIENT_SECRET
         sync: false
       - key: GOOGLE_REDIRECT_URI
-        sync: false # e.g. https://sublet-api.onrender.com/api/gmail/callback
+        sync: false # e.g. https://renewly-api.onrender.com/api/gmail/callback
       - key: PLAID_CLIENT_ID
         sync: false
       - key: PLAID_SECRET

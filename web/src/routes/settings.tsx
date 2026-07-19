@@ -36,8 +36,8 @@ function Settings({ user }: { user: User }) {
         </p>
       </div>
 
-      <BankCard user={user} />
       <GmailCard user={user} />
+      <BankCard user={user} />
       <ReminderCard
         uid={user.uid}
         reminderDays={settings?.reminderDays ?? 3}
@@ -147,8 +147,8 @@ function BankCard({ user }: { user: User }) {
   return (
     <Card
       icon={Landmark}
-      title="Bank subscription detection"
-      desc="Connect your bank via Plaid — the same secure, bank-hosted login used by Mint and Rocket Money. Your bank credentials never touch our servers."
+      title="International banks (demo)"
+      desc="Plaid-powered bank linking — the flow apps like Mint use, running on sandbox test banks. Indian banks aren't on Plaid (India uses the RBI Account Aggregator network); for Indian accounts, Gmail scanning above reads your real bank alert emails."
     >
       {unavailable ? (
         <p className="rounded-xl border border-border/60 bg-surface/60 px-4 py-3 text-sm text-muted-foreground">
@@ -280,7 +280,7 @@ function GmailCard({ user }: { user: User }) {
     <Card
       icon={Mail}
       title="Gmail subscription detection"
-      desc="Sublet reads bank alerts and payment receipts (read-only) to find recurring charges."
+      desc="Renewly reads your bank alerts and payment receipts (read-only) to find recurring charges. For Indian banks — HDFC, ICICI, SBI and the rest — this is your real transaction feed."
     >
       {unavailable ? (
         <p className="rounded-xl border border-border/60 bg-surface/60 px-4 py-3 text-sm text-muted-foreground">

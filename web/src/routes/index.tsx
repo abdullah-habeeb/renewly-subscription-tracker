@@ -75,7 +75,7 @@ function AuthPage() {
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-primary shadow-glow">
               <Sparkles className="h-5 w-5 text-primary-foreground" strokeWidth={2.5} />
             </div>
-            <span className="text-lg font-semibold tracking-tight">Sublet</span>
+            <span className="text-lg font-semibold tracking-tight">Renewly</span>
           </header>
 
           <div className="mt-14 max-w-xl">
@@ -289,7 +289,7 @@ function AuthForm({ mode }: { mode: Mode }) {
 
       {mode === "signup" && (
         <ul className="grid grid-cols-2 gap-2 pt-1 text-xs text-muted-foreground">
-          {["6+ characters", "Hard to guess", "Not your bank PIN", "Unique to Sublet"].map((r) => (
+          {["6+ characters", "Hard to guess", "Not your bank PIN", "Unique to Renewly"].map((r) => (
             <li key={r} className="flex items-center gap-1.5">
               <Check className="h-3 w-3 text-primary" /> {r}
             </li>

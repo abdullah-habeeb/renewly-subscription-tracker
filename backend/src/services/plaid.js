@@ -22,7 +22,7 @@ const client = isConfigured
 async function createLinkToken(uid) {
   const { data } = await client.linkTokenCreate({
     user: { client_user_id: uid },
-    client_name: 'Sublet',
+    client_name: 'Renewly',
     products: ['transactions'],
     country_codes: ['US'],
     language: 'en',

@@ -1,8 +1,8 @@
-# 💸 Sublet — Subscription Tracker
+# 💸 Renewly — Subscription Tracker
 
 Every subscription. One quiet place.
 
-Sublet finds the recurring charges hiding in your bank transactions and your inbox, tracks what they cost you monthly and yearly, and emails you **before** each renewal so nothing sneaks through.
+Renewly finds the recurring charges hiding in your bank transactions and your inbox, tracks what they cost you monthly and yearly, and emails you **before** each renewal so nothing sneaks through.
 
 | | |
 |---|---|
@@ -18,7 +18,7 @@ Sublet finds the recurring charges hiding in your bank transactions and your inb
 ## ✨ Features
 
 - **Beautiful dashboard** — monthly/yearly spend, category breakdown chart, upcoming renewals, add/edit/delete with realtime sync.
-- **Auto-detection from your bank** — connect a bank account with [Plaid Link](https://plaid.com/), the same secure bank-hosted login flow used by Mint, Rocket Money, and Copilot. Your bank credentials never touch our servers — Plaid handles the login directly with your bank and hands us a token. Sublet then pulls Plaid's own ML-based recurring-transaction detection and proposes matches for one-click tracking. No Plaid keys configured? It runs in **demo mode** with realistic sample bank data so the whole flow still works.
+- **Auto-detection from your bank** — connect a bank account with [Plaid Link](https://plaid.com/), the same secure bank-hosted login flow used by Mint, Rocket Money, and Copilot. Your bank credentials never touch our servers — Plaid handles the login directly with your bank and hands us a token. Renewly then pulls Plaid's own ML-based recurring-transaction detection and proposes matches for one-click tracking. No Plaid keys configured? It runs in **demo mode** with realistic sample bank data so the whole flow still works.
 - **Auto-detection from Gmail** — connect Gmail (read-only OAuth); the backend scans bank debit alerts and payment receipts (Netflix, Spotify, Google One, bank autopay alerts…), detects recurring charges by interval analysis, and proposes them for one-click tracking. Also has a demo mode.
 - **One unified review queue** — candidates from both bank and Gmail scans land in the same dashboard panel, tagged by source, so you approve or dismiss each one regardless of where it was found.
 - **AI-powered extraction (optional)** — with an `ANTHROPIC_API_KEY` configured, the Gmail scanner sends billing emails to Claude to fit *any* subscription into the (name, amount, cycle, category, date) tuple — merchants and phrasings the regex heuristics can't parse. Runs as a second pass and merges with heuristic results; without a key, scanning works exactly as before.
@@ -193,7 +193,7 @@ The stack deploys at zero cost: **Firebase Hosting** (frontend, Spark plan) + **
 ### 1. Backend → Render
 
 1. Push this repo to GitHub.
-2. [render.com](https://render.com) → sign in with GitHub → **New → Blueprint** → pick this repo. Render reads [render.yaml](render.yaml) and creates the `sublet-api` web service (free plan).
+2. [render.com](https://render.com) → sign in with GitHub → **New → Blueprint** → pick this repo. Render reads [render.yaml](render.yaml) and creates the `renewly-api` web service (free plan).
 3. In the service's **Environment** tab, paste the secret values (each key is pre-declared by the blueprint):
    - `FRONTEND_URL` — your Firebase Hosting URL, e.g. `https://subscription-hub-19cf9.web.app`
    - `FIREBASE_SERVICE_ACCOUNT` — the full contents of `backend/serviceAccountKey.json` on one line
@@ -202,7 +202,7 @@ The stack deploys at zero cost: **Firebase Hosting** (frontend, Spark plan) + **
    - `PLAID_CLIENT_ID` / `PLAID_SECRET` — from `backend/.env`
    - `SMTP_USER` / `SMTP_PASS` — from `backend/.env`
    - `CRON_SECRET` — from `backend/.env`
-4. Note the service URL Render assigns (e.g. `https://sublet-api.onrender.com`). If it differs from the value in [web/.env.production](web/.env.production), update that file and rebuild the frontend.
+4. Note the service URL Render assigns (e.g. `https://renewly-api.onrender.com`). If it differs from the value in [web/.env.production](web/.env.production), update that file and rebuild the frontend.
 5. Google Cloud Console → **APIs & Services → Credentials** → your OAuth client → add the production redirect URI from step 3 alongside the localhost one.
 
 ### 2. Frontend → Firebase Hosting

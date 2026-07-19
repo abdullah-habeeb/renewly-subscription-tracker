@@ -226,7 +226,7 @@ app.use((err, req, res, next) => {
 const PORT = process.env.PORT || 5000;
 if (require.main === module) {
   app.listen(PORT, () => {
-    console.log(`✅ Sublet API listening on port ${PORT}`);
+    console.log(`✅ Renewly API listening on port ${PORT}`);
     console.log(`📍 Environment: ${process.env.NODE_ENV || 'development'}`);
     scheduleReminders();
   });

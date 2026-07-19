@@ -266,7 +266,7 @@ export function SubscriptionDialog({ open, onOpenChange, uid, editing }: Props) 
                     <Input {...field} type="date" className={fieldCls} />
                   </FormControl>
                   <FormDescription className="text-[11px] text-muted-foreground/70">
-                    Once this date passes, Sublet will ask whether to remove the subscription.
+                    Once this date passes, Renewly will ask whether to remove the subscription.
                   </FormDescription>
                   <FormMessage />
                 </FormItem>

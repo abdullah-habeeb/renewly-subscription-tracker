@@ -499,7 +499,7 @@ function EmptyState({ onAdd }: { onAdd: () => void }) {
       </div>
       <p className="mt-4 font-medium">No subscriptions yet</p>
       <p className="mt-1 max-w-xs text-sm text-muted-foreground">
-        Add one manually, or connect Gmail or your bank in Settings and let Sublet find them for you.
+        Add one manually, or connect Gmail or your bank in Settings and let Renewly find them for you.
       </p>
       <button
         onClick={onAdd}

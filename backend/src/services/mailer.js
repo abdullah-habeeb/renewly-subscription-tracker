@@ -3,7 +3,7 @@ const nodemailer = require('nodemailer');
 const SMTP_USER = process.env.SMTP_USER;
 // Google shows app passwords as "abcd efgh ijkl mnop" — tolerate pasted spaces.
 const SMTP_PASS = process.env.SMTP_PASS ? process.env.SMTP_PASS.replace(/\s+/g, '') : undefined;
-const FROM = process.env.MAIL_FROM || (SMTP_USER ? `Sublet <${SMTP_USER}>` : null);
+const FROM = process.env.MAIL_FROM || (SMTP_USER ? `Renewly <${SMTP_USER}>` : null);
 
 const isConfigured = Boolean(SMTP_USER && SMTP_PASS);
 
@@ -44,7 +44,7 @@ function renderReminderHtml(subs) {
   <div style="background:#0d1f18;padding:32px 16px;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#eef5f0;">
     <div style="max-width:560px;margin:0 auto;background:#14291f;border:1px solid #2e4a3f;border-radius:20px;overflow:hidden;">
       <div style="padding:28px 28px 0;">
-        <p style="margin:0;font-size:13px;letter-spacing:1px;color:#7fd6a4;text-transform:uppercase;">Sublet · Renewal reminder</p>
+        <p style="margin:0;font-size:13px;letter-spacing:1px;color:#7fd6a4;text-transform:uppercase;">Renewly · Renewal reminder</p>
         <h1 style="margin:12px 0 4px;font-size:24px;font-weight:600;">Heads up — ${subs.length === 1 ? 'a subscription renews' : `${subs.length} subscriptions renew`} soon.</h1>
         <p style="margin:0 0 20px;font-size:14px;color:#a9c2b4;">Cancel or budget for these before they bill you.</p>
       </div>
@@ -60,7 +60,7 @@ function renderReminderHtml(subs) {
         <tbody>${rows}</tbody>
       </table>
       <div style="padding:20px 28px 28px;">
-        <p style="margin:0;font-size:12px;color:#6f8a7c;">You're getting this because reminders are on in your Sublet settings.</p>
+        <p style="margin:0;font-size:12px;color:#6f8a7c;">You're getting this because reminders are on in your Renewly settings.</p>
       </div>
     </div>
   </div>`;

@@ -35,7 +35,7 @@ export function AppShell({ children }: { children: (user: User) => ReactNode }) 
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-primary shadow-glow">
               <Sparkles className="h-4 w-4 text-primary-foreground" strokeWidth={2.5} />
             </div>
-            <span className="font-semibold tracking-tight">Sublet</span>
+            <span className="font-semibold tracking-tight">Renewly</span>
           </Link>
 
           <nav className="flex items-center gap-1">

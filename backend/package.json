@@ -1,7 +1,7 @@
 {
   "name": "subscription-tracker-backend",
   "version": "2.0.0",
-  "description": "Sublet backend — Gmail subscription detection and renewal reminder engine",
+  "description": "Renewly backend — Gmail subscription detection and renewal reminder engine",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
