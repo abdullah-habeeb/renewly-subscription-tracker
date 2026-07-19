@@ -6,7 +6,7 @@
     "rules": "storage.rules"
   },
   "hosting": {
-    "public": ".",
+    "public": "web/dist",
     "ignore": [
       "firebase.json",
       "**/.*",
@@ -33,7 +33,7 @@
       "port": 5001
     },
     "hosting": {
-      "port": 5000
+      "port": 5002
     },
     "ui": {
       "port": 4000,

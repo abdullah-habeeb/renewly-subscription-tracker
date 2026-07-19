@@ -70,3 +70,9 @@ node_modules/
 
 # Firebase environment files
 functions/.env*
+
+# Sublet
+backend/.data/
+backend/serviceAccountKey.json
+web/dist/
+.claude/settings.local.json

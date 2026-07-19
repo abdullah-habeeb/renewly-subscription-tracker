@@ -1,0 +1,124 @@
+{
+  "version": 1,
+  "sdk_version": "0.23.0",
+  "path": "/mcp",
+  "auth": {
+    "type": "none"
+  },
+  "mcp": {
+    "server": {
+      "name": "sublet-mcp",
+      "version": "0.1.0",
+      "title": "Sublet — Subscription Tracker Tools"
+    },
+    "tools": [
+      {
+        "name": "categorize_subscription",
+        "title": "Categorize subscription",
+        "description": "Look up a well-known consumer subscription by name and return its typical category and typical monthly price. Uses a public heuristic catalog — no user or account data.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Subscription name, e.g. 'Netflix' or 'Spotify'."
+            }
+          },
+          "required": [
+            "name"
+          ]
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "estimate_subscription_savings",
+        "title": "Estimate subscription savings",
+        "description": "Given a list of monthly subscription costs, returns total monthly and yearly spend plus a rough savings estimate if a stated fraction were cancelled.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "subscriptions": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "description": "Subscription name, e.g. Netflix."
+                  },
+                  "monthly_cost": {
+                    "type": "number",
+                    "minimum": 0,
+                    "description": "Monthly cost in the user's currency."
+                  }
+                },
+                "required": [
+                  "name",
+                  "monthly_cost"
+                ]
+              },
+              "description": "List of subscriptions with their monthly cost."
+            },
+            "cancel_fraction": {
+              "default": 0.2,
+              "description": "Fraction (0-1) of monthly spend the user could plausibly cancel.",
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
+          },
+          "required": [
+            "subscriptions"
+          ]
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "days_until_renewal",
+        "title": "Days until renewal",
+        "description": "Given a renewal date (ISO YYYY-MM-DD), returns days remaining until that date and a suggested reminder date a few days before.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "renewal_date": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+              "description": "Renewal date in ISO YYYY-MM-DD format."
+            },
+            "remind_days_before": {
+              "default": 3,
+              "description": "How many days before the renewal to send a reminder.",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 30
+            }
+          },
+          "required": [
+            "renewal_date"
+          ]
+        },
+        "outputSchema": null
+      }
+    ]
+  }
+}

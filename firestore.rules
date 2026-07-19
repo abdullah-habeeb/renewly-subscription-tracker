@@ -1,12 +1,30 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    function signedInAs(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+
+    // Tracked subscriptions — owner only.
     match /subscriptions/{docId} {
-      // Any authenticated user can read their own docs; creation allowed if uid matches
-      allow read: if request.auth != null && request.auth.uid == resource.data.uid;
-      allow create: if request.auth != null && request.auth.uid == request.resource.data.uid;
-      // Update and delete only allowed by the owner (uid field, not userId)
-      allow update, delete: if request.auth != null && request.auth.uid == resource.data.uid;
+      allow read, update, delete: if signedInAs(resource.data.uid);
+      allow create: if signedInAs(request.resource.data.uid);
+    }
+
+    // Subscription candidates found by Gmail scanning — owner only.
+    match /detected/{docId} {
+      allow read, update, delete: if signedInAs(resource.data.uid);
+      allow create: if signedInAs(request.resource.data.uid);
+    }
+
+    // Per-user settings (email, reminderDays, gmail status) — owner only.
+    match /users/{uid} {
+      allow read, write: if signedInAs(uid);
+    }
+
+    // Gmail OAuth refresh tokens — server (Admin SDK) only, never clients.
+    match /gmailTokens/{uid} {
+      allow read, write: if false;
     }
   }
 }

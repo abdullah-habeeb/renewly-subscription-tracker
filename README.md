@@ -1,262 +1,248 @@
-# 📱 Subscription Tracker
+# 💸 Sublet — Subscription Tracker
 
-A full-stack web app to track subscriptions (Netflix, Spotify, etc.) — built with **Docker** and automated with a **Jenkins CI/CD pipeline**.
+Every subscription. One quiet place.
 
-![App Screenshot](app-screenshot.png)
+Sublet finds the recurring charges hiding in your bank transactions and your inbox, tracks what they cost you monthly and yearly, and emails you **before** each renewal so nothing sneaks through.
 
----
-
-## 🧰 What You Need (Prerequisites)
-
-Before anything, install these two tools:
-
-| Tool | Download | Why You Need It |
-|------|----------|-----------------|
-| **Docker Desktop** | https://www.docker.com/products/docker-desktop/ | Runs the entire app in containers |
-| **Git** | https://git-scm.com/downloads | To clone this repository |
-
-> **After installing Docker Desktop**, open it and wait until the whale icon in your taskbar turns **green** (engine running). This can take 1–2 minutes.
+| | |
+|---|---|
+| 🖥️ **Frontend** | React 19 + Vite + Tailwind 4 + shadcn/ui + TanStack Router (`web/`) |
+| 🔐 **Auth & data** | Firebase Auth (email/password + Google) + Firestore (realtime) |
+| ⚙️ **Engine** | Express backend (`backend/`) — Plaid bank scanning, Gmail scanning, renewal reminder cron |
+| 🏦 **Bank detection** | Plaid Link + Plaid's recurring-transactions API (the same tech Mint/Rocket Money use) |
+| 📬 **Reminders** | Nodemailer via Gmail SMTP, daily cron at 08:00 IST |
+| 🐳 **Deploy** | Docker Compose / Firebase Hosting + Render/Railway |
 
 ---
 
-## 🚀 Quick Start (Run in 2 Steps)
+## ✨ Features
 
-### Step 1 — Clone the project
+- **Beautiful dashboard** — monthly/yearly spend, category breakdown chart, upcoming renewals, add/edit/delete with realtime sync.
+- **Auto-detection from your bank** — connect a bank account with [Plaid Link](https://plaid.com/), the same secure bank-hosted login flow used by Mint, Rocket Money, and Copilot. Your bank credentials never touch our servers — Plaid handles the login directly with your bank and hands us a token. Sublet then pulls Plaid's own ML-based recurring-transaction detection and proposes matches for one-click tracking. No Plaid keys configured? It runs in **demo mode** with realistic sample bank data so the whole flow still works.
+- **Auto-detection from Gmail** — connect Gmail (read-only OAuth); the backend scans bank debit alerts and payment receipts (Netflix, Spotify, Google One, bank autopay alerts…), detects recurring charges by interval analysis, and proposes them for one-click tracking. Also has a demo mode.
+- **One unified review queue** — candidates from both bank and Gmail scans land in the same dashboard panel, tagged by source, so you approve or dismiss each one regardless of where it was found.
+- **AI-powered extraction (optional)** — with an `ANTHROPIC_API_KEY` configured, the Gmail scanner sends billing emails to Claude to fit *any* subscription into the (name, amount, cycle, category, date) tuple — merchants and phrasings the regex heuristics can't parse. Runs as a second pass and merges with heuristic results; without a key, scanning works exactly as before.
+- **Email reminders** — a daily job emails you a digest N days before each renewal (you pick N in Settings, 1–7 days). Overdue renewal dates roll forward automatically.
+- **Password reset** — "Forgot password?" on the sign-in screen, powered by Firebase's built-in email flow (no backend involved).
 
-```bash
-git clone https://github.com/abdullah-habeeb/subscription-tracker.git
-cd subscription-tracker
-```
-
-### Step 2 — Start the app
-
-```bash
-docker-compose up -d --build
-```
-
-That's it. Docker will build and start 3 containers automatically:
-
-| Container | What It Does | URL |
-|-----------|-------------|-----|
-| **Backend** | REST API (Express.js) | http://localhost:5000 |
-| **Frontend** | Dashboard UI (Nginx) | http://localhost |
-| **Database** | PostgreSQL storage | localhost:5432 |
-
-Open **http://localhost** in your browser to use the app. ✅
+> **Why Plaid Link instead of a bank username/password form?** Because that's how every legitimate fintech app works — asking users to type bank credentials into a third-party form violates bank terms of service, is a massive security liability, and gets detected and blocked by banks anyway. Plaid (and India's RBI-regulated Account Aggregator framework) exist specifically so apps never see your bank password. Sandbox mode works instantly for free; connecting *real* bank accounts requires a Plaid production account (a short review, not a big lift) since Plaid is the one taking on the regulatory/security burden of touching real bank credentials.
 
 ---
 
-## ✅ Verify Everything is Working
+## 🚀 Quick start (local dev)
 
-Run this command to see all 3 containers:
-
-```bash
-docker ps
-```
-
-You should see 3 containers with `Up` status:
-```
-subscription-tracker-backend-dev    Up
-subscription-tracker-frontend-dev   Up
-subscription-tracker-postgres-dev   Up
-```
-
-Check the API is healthy:
+Prerequisites: **Node 20+** and **npm**.
 
 ```bash
-# On Windows (PowerShell)
-Invoke-RestMethod http://localhost:5000/health
+# 1. Backend (terminal 1) — runs on :5000
+cd backend
+npm install
+npm run dev
 
-# On Mac/Linux
-curl http://localhost:5000/health
+# 2. Frontend (terminal 2) — runs on :3000, proxies /api to :5000
+cd web
+npm install
+npm run dev
 ```
 
-Expected response: `{ "status": "healthy", "timestamp": "..." }` ✅
+Open **http://localhost:3000**, create an account, and you're in.
+With zero configuration you get: full auth, subscription tracking, charts, and **demo-mode** bank + Gmail scanning.
 
----
-
-## 🛑 Stop the App
+### Docker alternative
 
 ```bash
-docker-compose down
+docker-compose up -d --build   # frontend on :80, backend on :5000
 ```
 
-To also delete the database data:
+### Running the tests
 
 ```bash
-docker-compose down -v
+cd backend && npm test   # Jest — detector heuristics + API auth guards
+cd web && npm test       # Vitest — date/cost math (calculateNextDueDate, daysUntil, monthlyCost…)
 ```
 
 ---
 
-## 🤖 Jenkins CI/CD Pipeline
+## 🔧 Enabling the real integrations
 
-Jenkins automates the quality checks every time code is pushed. Run Jenkins inside Docker — no installation needed.
+All server configuration lives in `backend/.env` (copy from [backend/.env.example](backend/.env.example)).
 
-### Step 1 — Start Jenkins
+### 1. Real bank scanning (Plaid)
+
+1. Sign up free at [dashboard.plaid.com/signup](https://dashboard.plaid.com/signup) — no approval needed for Sandbox.
+2. **Team Settings → Keys** → copy your `client_id` and the **Sandbox** `secret`.
+3. Put the values in `backend/.env`:
+   ```env
+   PLAID_CLIENT_ID=xxxxxxxxxxxxxxxxxxxxxxxx
+   PLAID_SECRET=xxxxxxxxxxxxxxxxxxxxxxxx
+   PLAID_ENV=sandbox
+   ```
+
+Now **Settings → Connect bank** opens the real Plaid Link modal. In Sandbox, use username `user_good` / password `pass_good` for any test institution (e.g. "Chase") — Plaid pre-seeds it with realistic transaction history, so **Scan now** immediately finds recurring charges via Plaid's own detection engine.
+
+Sandbox only offers Plaid's test institutions, not real Indian banks (Plaid doesn't cover India — see the note above). To go live with real bank accounts, apply for [Production access](https://dashboard.plaid.com/overview) in the Plaid dashboard and set `PLAID_ENV=production` with your production secret.
+
+### 2. Real Gmail scanning (Google OAuth)
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/) → create/select a project.
+2. **APIs & Services → Library** → enable the **Gmail API**.
+3. **APIs & Services → OAuth consent screen** → External → add yourself as a test user.
+4. **APIs & Services → Credentials → Create credentials → OAuth client ID → Web application**:
+   - Authorized redirect URI: `http://localhost:5000/api/gmail/callback`
+5. Put the values in `backend/.env`:
+   ```env
+   GOOGLE_CLIENT_ID=xxxx.apps.googleusercontent.com
+   GOOGLE_CLIENT_SECRET=GOCSPX-xxxx
+   ```
+
+Now **Settings → Connect Gmail** does a real OAuth flow, and **Scan now** reads (read-only) your bank-alert and receipt emails from the last 180 days.
+
+### 3. Email reminders (Gmail SMTP)
+
+1. Google Account → **Security → 2-Step Verification → App passwords** → create one for "Mail".
+2. In `backend/.env`:
+   ```env
+   SMTP_USER=you@gmail.com
+   SMTP_PASS=abcd efgh ijkl mnop   # the app password
+   ```
+
+Test it from **Settings → Send me a test reminder**.
+
+### 4. Daily reminder cron (server-side Firestore)
+
+The daily job needs Firebase Admin access:
+
+1. [Firebase Console](https://console.firebase.google.com/) → Project settings → **Service accounts** → Generate new private key.
+2. Save as `backend/serviceAccountKey.json` (gitignored), then in `backend/.env`:
+   ```env
+   FIREBASE_SERVICE_ACCOUNT_FILE=./serviceAccountKey.json
+   ```
+
+With this set, the backend runs the reminder pass **daily at 08:00 IST** (and you can trigger it manually: `POST /api/reminders/run`).
+
+### 5. Firestore security rules
+
+After changing rules, deploy them:
 
 ```bash
-docker run -d \
-  --name jenkins \
-  -p 8080:8080 \
-  -p 50000:50000 \
-  -v jenkins_home:/var/jenkins_home \
-  jenkins/jenkins:lts-jdk17
-```
-
-Wait ~30 seconds, then open **http://localhost:8080**
-
-### Step 2 — Unlock Jenkins
-
-Get the one-time admin password:
-
-```bash
-docker exec jenkins cat /var/jenkins_home/secrets/initialAdminPassword
-```
-
-Paste that password into the Jenkins unlock page.
-
-### Step 3 — Set Up Jenkins
-
-1. Click **"Install suggested plugins"** and wait (~2 minutes)
-2. On the "Create First Admin User" screen → click **"Skip and continue as admin"**
-3. Click **"Save and Finish"** → **"Start using Jenkins"**
-
-> Your login is now **username:** `admin` | **password:** the initial password you copied above.
-
-### Step 4 — Create the Pipeline
-
-1. Click **"New Item"**
-2. Enter name: `subscription-tracker`
-3. Select **Pipeline** → click **OK**
-4. Scroll to the **Pipeline** section at the bottom
-5. Set **Definition** → `Pipeline script from SCM`
-6. Set **SCM** → `Git`
-7. Set **Repository URL** → `https://github.com/abdullah-habeeb/subscription-tracker`
-8. Under **Branches to build** → change `*/master` to **`*/main`**
-9. Set **Script Path** → `.ci/jenkins/Jenkinsfile`
-10. Click **Save**
-
-### Step 5 — Run the Pipeline
-
-Click **"Build Now"** — watch all 6 stages run automatically:
-
-```
-✅ Stage 1: SCM Checkout       — Pulls latest code from GitHub
-✅ Stage 2: Code Analysis      — Scans source code structure
-✅ Stage 3: Build Verification — Confirms all Dockerfiles exist
-✅ Stage 4: Security Scan      — Checks for vulnerabilities
-✅ Stage 5: Artifact Staging   — Prepares build artifacts
-✅ Stage 6: Quality Metrics    — Reports on code quality
+firebase deploy --only firestore:rules
 ```
 
 ---
 
-## 📂 Project Structure
+## 📂 Project structure
 
 ```
 subscription-tracker/
+├── web/                        ← React frontend (Vite SPA)
+│   └── src/
+│       ├── routes/             ← / (auth) · /dashboard · /settings
+│       ├── components/         ← AppShell, SubscriptionDialog, shadcn/ui
+│       ├── lib/                ← firebase.ts, data.ts (Firestore), api.ts, types.ts
+│       └── hooks/useAuth.tsx
 │
-├── backend/src/server.js       ← Express.js REST API
-├── index.html                  ← Frontend dashboard
-├── login.html                  ← Login page
-├── style.css                   ← Styling
+├── backend/                    ← Express engine
+│   └── src/
+│       ├── server.js           ← routes + startup
+│       ├── firebase.js         ← Firebase Admin init (graceful degradation)
+│       ├── middleware/auth.js  ← Firebase ID-token verification
+│       ├── services/
+│       │   ├── plaid.js            ← Plaid Link + recurring-transactions scanning
+│       │   ├── plaidTokenStore.js  ← Plaid access tokens (Firestore or local file)
+│       │   ├── gmail.js            ← OAuth flow + inbox scanning
+│       │   ├── detector.js         ← recurring-charge heuristics + demo data
+│       │   ├── mailer.js           ← reminder emails (Nodemailer)
+│       │   └── tokenStore.js       ← Gmail refresh tokens (Firestore or local file)
+│       └── jobs/reminders.js   ← daily cron: roll dates + send digests
 │
-├── .ci/docker/
-│   ├── Dockerfile.dev          ← Development container (with hot-reload)
-│   ├── Dockerfile.prod         ← Production container (optimized)
-│   ├── Dockerfile.frontend     ← Nginx container for serving UI
-│   └── nginx.conf              ← Routes /api/* to backend
-│
-├── .ci/jenkins/
-│   └── Jenkinsfile             ← 6-stage CI/CD pipeline definition
-│
-├── docker-compose.yml          ← Runs all 3 services together
-└── README.md                   ← This file
+├── functions/                  ← legacy Firebase Cloud Functions (optional)
+├── .ci/                        ← Dockerfiles, nginx.conf, Jenkinsfile
+├── docker-compose.yml
+├── firestore.rules
+└── firebase.json               ← hosting serves web/dist
 ```
 
 ---
 
-## 🔌 API Quick Reference
+## 🌐 API reference
 
-All API calls require the `x-user-id` header.
+All `/api/*` routes (except the OAuth callback) require `Authorization: Bearer <Firebase ID token>`.
+
+| Method | Route | Purpose |
+|--------|-------|---------|
+| GET | `/health` | Liveness + feature flags (`firestoreAdmin`, `gmailOAuth`, `plaidBank`, `email`) |
+| GET | `/api/plaid/status` | Bank connection state for the signed-in user |
+| POST | `/api/plaid/link-token` | Creates a Plaid Link token (or `{demo:true}`) |
+| POST | `/api/plaid/exchange` | Exchanges Link's `public_token` for a stored access token |
+| POST | `/api/plaid/scan` | Pulls Plaid's recurring-transactions → subscription candidates |
+| POST | `/api/plaid/disconnect` | Revokes and forgets the stored bank connection |
+| GET | `/api/gmail/status` | Connection state for the signed-in user |
+| GET | `/api/gmail/auth-url` | Google OAuth consent URL (or `{demo:true}`) |
+| GET | `/api/gmail/callback` | OAuth redirect target (Google calls this) |
+| POST | `/api/gmail/scan` | Scan inbox → subscription candidates |
+| POST | `/api/gmail/disconnect` | Forget the stored refresh token |
+| POST | `/api/reminders/test` | Email the caller a real reminder now |
+| POST | `/api/reminders/run` | Run the daily job (header `x-cron-secret` in prod) |
+
+---
+
+## 🚢 Deploying (100% free tier)
+
+The stack deploys at zero cost: **Firebase Hosting** (frontend, Spark plan) + **Render** (backend, free plan) + **cron-job.org** (daily reminder trigger, since free Render instances sleep when idle).
+
+### 1. Backend → Render
+
+1. Push this repo to GitHub.
+2. [render.com](https://render.com) → sign in with GitHub → **New → Blueprint** → pick this repo. Render reads [render.yaml](render.yaml) and creates the `sublet-api` web service (free plan).
+3. In the service's **Environment** tab, paste the secret values (each key is pre-declared by the blueprint):
+   - `FRONTEND_URL` — your Firebase Hosting URL, e.g. `https://subscription-hub-19cf9.web.app`
+   - `FIREBASE_SERVICE_ACCOUNT` — the full contents of `backend/serviceAccountKey.json` on one line
+   - `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` — from `backend/.env`
+   - `GOOGLE_REDIRECT_URI` — `https://<your-render-url>/api/gmail/callback`
+   - `PLAID_CLIENT_ID` / `PLAID_SECRET` — from `backend/.env`
+   - `SMTP_USER` / `SMTP_PASS` — from `backend/.env`
+   - `CRON_SECRET` — from `backend/.env`
+4. Note the service URL Render assigns (e.g. `https://sublet-api.onrender.com`). If it differs from the value in [web/.env.production](web/.env.production), update that file and rebuild the frontend.
+5. Google Cloud Console → **APIs & Services → Credentials** → your OAuth client → add the production redirect URI from step 3 alongside the localhost one.
+
+### 2. Frontend → Firebase Hosting
 
 ```bash
-# Health check (no auth needed)
-curl http://localhost:5000/health
-
-# Get all your subscriptions
-curl -H "x-user-id: user1" http://localhost:5000/api/subscriptions
-
-# Add a subscription
-curl -X POST http://localhost:5000/api/subscriptions \
-  -H "x-user-id: user1" \
-  -H "Content-Type: application/json" \
-  -d '{"name":"Netflix","amount":499,"category":"Entertainment","billingCycle":"monthly","nextDueDate":"2026-07-01"}'
-
-# Get spending report
-curl -H "x-user-id: user1" http://localhost:5000/api/spending-report
+firebase login                          # one-time, opens a browser
+cd web && npm run build                 # picks up web/.env.production
+cd .. && firebase deploy --only hosting,firestore:rules
 ```
+
+Deploying `firestore:rules` at the same time replaces any permissive test-mode rules (which expire!) with the locked-down rules in [firestore.rules](firestore.rules). The `*.web.app` domain is automatically authorized for Firebase Auth — no extra step.
+
+### 3. Daily reminders → cron-job.org
+
+Free Render instances sleep after ~15 min idle, so the in-process cron can't be trusted. [cron-job.org](https://cron-job.org) (free) fires it externally — and its request also wakes the instance:
+
+- URL: `https://<your-render-url>/api/reminders/run`, method **POST**, schedule daily (e.g. 08:00 IST)
+- Custom header: `x-cron-secret: <your CRON_SECRET>`
+
+### Free-tier honesty
+
+- **Cold starts**: a sleeping Render instance takes ~50s to wake on first request. Fine for a portfolio app; mention it in demos.
+- **Plaid stays in Sandbox** (test banks, `user_good`/`pass_good`) — real bank data needs Plaid Production access, which requires a business application.
+- **Gmail OAuth stays in Testing mode** — only the test users you added in the consent screen can connect Gmail. That's you, which is all a portfolio needs.
 
 ---
 
-## 🔧 Useful Commands
-
-```bash
-# See running containers
-docker ps
-
-# View live logs
-docker-compose logs -f
-
-# Backend logs only
-docker logs -f subscription-tracker-backend-dev
-
-# Restart everything
-docker-compose restart
-
-# Full clean reset
-docker-compose down -v && docker-compose up -d --build
-```
-
----
-
-## ❓ Troubleshooting
+## 🧯 Troubleshooting
 
 | Problem | Fix |
 |---------|-----|
-| `docker-compose up` fails | Make sure Docker Desktop is open and engine is running (green icon) |
-| `http://localhost` doesn't open | Run `docker ps` and check the `frontend` container shows `Up` |
-| `http://localhost:5000/health` returns error | Check `docker logs subscription-tracker-backend-dev` |
-| Jenkins shows `fatal: couldn't find remote ref refs/heads/master` | Change branch from `*/master` to `*/main` in Jenkins pipeline config |
-| Jenkins password not working | Run: `docker exec jenkins cat /var/jenkins_home/secrets/initialAdminPassword` |
-| Port 80 or 5000 already in use | Stop the conflicting app or change ports in `docker-compose.yml` |
+| `Settings` says backend isn't reachable | Start it: `cd backend && npm run dev` |
+| "Demo mode" shown in Bank card | Expected without `PLAID_CLIENT_ID/SECRET` — see §1 above |
+| Plaid Link modal login fails | Sandbox only accepts `user_good` / `pass_good` (or other [documented test credentials](https://plaid.com/docs/sandbox/test-credentials/)) |
+| "Demo mode" shown in Gmail card | Expected without `GOOGLE_CLIENT_ID/SECRET` — see §2 above |
+| Test reminder says email isn't configured | Set `SMTP_USER` / `SMTP_PASS` (app password, not your real password) |
+| Reminder cron disabled at startup | Needs both SMTP config **and** a Firebase service account |
+| Firestore `permission-denied` in console | Deploy the updated rules: `firebase deploy --only firestore:rules` |
+| Google OAuth error `redirect_uri_mismatch` | The redirect URI in Google Cloud must exactly match `GOOGLE_REDIRECT_URI` |
 
 ---
 
-## 🏗️ How It All Works Together
-
-```
-You push code to GitHub
-        │
-        ▼
-Jenkins detects the push (or you click Build Now)
-        │
-        ▼
-Jenkins runs the 6-stage pipeline (Jenkinsfile)
-        │
-        ▼
-All checks pass → App is deployment-ready
-        │
-        ▼
-Docker Compose runs 3 containers on your machine:
-   ┌──────────┐   ┌──────────┐   ┌──────────┐
-   │ Frontend │──▶│ Backend  │──▶│ Database │
-   │  Nginx   │   │ Express  │   │ Postgres │
-   │  :80     │   │  :5000   │   │  :5432   │
-   └──────────┘   └──────────┘   └──────────┘
-```
-
----
-
-**Made by Abdullah** | For educational DevOps demonstration purposes
+**Made by Abdullah** — full-stack subscription tracking with automatic detection and reminders.

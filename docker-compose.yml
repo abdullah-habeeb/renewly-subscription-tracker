@@ -1,7 +1,7 @@
 version: '3.8'
 
 services:
-  # Backend API Service
+  # Backend API — Gmail scanning + reminder engine
   backend:
     build:
       context: .
@@ -13,7 +13,15 @@ services:
     environment:
       - NODE_ENV=development
       - PORT=5000
-      - LOG_LEVEL=debug
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost}
+      - FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID:-subscription-hub-19cf9}
+      - FIREBASE_SERVICE_ACCOUNT=${FIREBASE_SERVICE_ACCOUNT:-}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
+      - GOOGLE_REDIRECT_URI=${GOOGLE_REDIRECT_URI:-http://localhost:5000/api/gmail/callback}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASS=${SMTP_PASS:-}
+      - CRON_SECRET=${CRON_SECRET:-}
     volumes:
       - ./backend/src:/app/src
       - /app/node_modules
@@ -22,7 +30,7 @@ services:
     restart: unless-stopped
     command: npm run dev
 
-  # Frontend Service
+  # Frontend — React app built and served by nginx (proxies /api to backend)
   frontend:
     build:
       context: .
@@ -30,25 +38,8 @@ services:
     container_name: subscription-tracker-frontend-dev
     ports:
       - "80:80"
-      - "3000:3000"
     depends_on:
       - backend
-    networks:
-      - app-network
-    restart: unless-stopped
-
-  # PostgreSQL Database (optional - for future real DB integration)
-  postgres:
-    image: postgres:15-alpine
-    container_name: subscription-tracker-postgres-dev
-    environment:
-      POSTGRES_USER: devuser
-      POSTGRES_PASSWORD: devpass
-      POSTGRES_DB: subscription_tracker_dev
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres-data-dev:/var/lib/postgresql/data
     networks:
       - app-network
     restart: unless-stopped
@@ -56,6 +47,3 @@ services:
 networks:
   app-network:
     driver: bridge
-
-volumes:
-  postgres-data-dev:
