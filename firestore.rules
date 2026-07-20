@@ -22,8 +22,11 @@ service cloud.firestore {
       allow read, write: if signedInAs(uid);
     }
 
-    // Gmail OAuth refresh tokens — server (Admin SDK) only, never clients.
+    // OAuth/bank tokens — server (Admin SDK) only, never clients.
     match /gmailTokens/{uid} {
+      allow read, write: if false;
+    }
+    match /plaidTokens/{uid} {
       allow read, write: if false;
     }
   }
