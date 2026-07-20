@@ -132,6 +132,51 @@ describe('detectRecurring', () => {
   test('returns an empty array for no transactions', () => {
     expect(detectRecurring([])).toEqual([]);
   });
+
+  // Regression: real Google One billing emails come in two flavors —
+  // genuine receipts ("Price 30 GB (Google One) ₹59.00/month... Here's what
+  // we charged you today") and pure reminders that merely *cite* a future
+  // price ("Your trial for Google One will end... you'll be charged ₹1,950").
+  // Both used to survive into the scanner's transaction list and get grouped
+  // under the same bare "Google One" name, wrecking the interval-average
+  // calculation and letting a stale reminder amount win over the real
+  // receipt. gmail.js's isNonChargeNotice is what should keep the reminders
+  // out before they ever reach here — this test locks in what detectRecurring
+  // itself must do with the transactions that remain: a single real receipt
+  // for a *different* plan than one already tracked must produce its own,
+  // distinctly named candidate instead of colliding with it.
+  test('labels distinct Google One plans separately so a new plan never collides with an existing one', () => {
+    const result = detectRecurring([
+      {
+        merchantText:
+          'You updated your subscription to Google LLC Google Play Price 30 GB (Google One) ₹59.00/month Total: ₹59.00',
+        amount: 59,
+        date: '2026-07-20',
+        subject: 'You updated your subscription to Google LLC',
+      },
+    ]);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({ name: 'Google One (30 GB)', amount: 59, billingCycle: 'monthly' });
+  });
+
+  test('keeps repeat charges of the same Google One plan grouped together', () => {
+    const receipt = (date) => ({
+      merchantText: 'Your Google AI Pro (5 TB) payment Price (Google One) ₹1,950.00/month receipt',
+      amount: 1950,
+      date,
+      subject: 'Google One payment receipt',
+    });
+    const result = detectRecurring([receipt('2026-05-20'), receipt('2026-06-20'), receipt('2026-07-20')]);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({ name: 'Google One (AI Pro)', billingCycle: 'monthly', amount: 1950 });
+  });
+
+  test('a Google plan with no size/tier wording in the text stays a bare "Google One"', () => {
+    const result = detectRecurring([
+      { merchantText: 'Google One payment receipt', amount: 130, date: '2026-06-01', subject: 'Receipt' },
+    ]);
+    expect(result[0].name).toBe('Google One');
+  });
 });
 
 describe('demo data', () => {

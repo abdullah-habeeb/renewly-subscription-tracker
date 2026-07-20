@@ -1,4 +1,6 @@
-const { extractBodyText, isBulkMail, mergeAccountCandidates, scanLookbackDays } = require('./gmail');
+const {
+  extractBodyText, isBulkMail, isNonChargeNotice, mergeAccountCandidates, scanLookbackDays,
+} = require('./gmail');
 const { extractAmount } = require('./detector');
 
 function b64(str) {
@@ -149,6 +151,46 @@ describe('mergeAccountCandidates', () => {
     const merged = mergeAccountCandidates([noAccounts]);
     expect(merged).toHaveLength(1);
     expect(merged[0].sourceAccounts).toEqual([]);
+  });
+});
+
+describe('isNonChargeNotice', () => {
+  // Regression, verified against the user's real inbox (2026-07-20): a
+  // genuine ₹59/month Google One receipt landed the same week as several
+  // notices about an unrelated ₹1,950 plan whose payment kept failing — all
+  // of which cite the ₹1,950 figure without a charge ever completing. The
+  // scanner grouped all of them as "Google One" charges, and the real
+  // receipt lost out to a stale reminder. These must be filtered before
+  // detectRecurring ever sees them.
+  test('flags a subscription-suspended / payment-declined notice', () => {
+    const text =
+      'Google One subscription suspended due to payment issue Google Play Your subscription will be cancelled UPDATE PAYMENT Hello Abdullah, Your payment from UPI: QR code was declined. Update your payment method to get all of the benefits provided by Google AI';
+    expect(isNonChargeNotice(text)).toBe(true);
+  });
+
+  test('flags a standalone payment-declined notice', () => {
+    const text =
+      'Payment declined for Google One subscription Google Play Your subscription will be cancelled UPDATE PAYMENT Hello Abdullah, Your payment from UPI: QR code was declined.';
+    expect(isNonChargeNotice(text)).toBe(true);
+  });
+
+  test('flags a trial-ending reminder', () => {
+    const text =
+      "Your trial for Google One will end on 17 Jul 2026 Google Play Hi Abdullah, This is a reminder that your trial for Google One (Google AI Pro (5 TB)) on Google Play will end on 17 Jul 2026. You'll be automatically charged as described below";
+    expect(isNonChargeNotice(text)).toBe(true);
+  });
+
+  // The real receipt: must survive untouched. Its only mention of "cancel"
+  // is the standard "Learn how to cancel" footer link every Google Play
+  // receipt carries — that alone must never trip the filter.
+  test('does not flag a genuine completed-charge receipt', () => {
+    const text =
+      "You updated your subscription to Google LLC Google Play Thank you You updated your subscription purchase from Google Ireland Limited on Google Play. You will be automatically charged the subscription cost as described below until you cancel: Starting today: ₹59.00/month Here's what we charged you today: Order number: SOP.3323-2705-5690-63069 Price 30 GB (Google One) ₹59.00/month Total: ₹59.00 Payment method: Visa-0021 Learn how to cancel.";
+    expect(isNonChargeNotice(text)).toBe(false);
+  });
+
+  test('does not flag an ordinary Netflix payment receipt', () => {
+    expect(isNonChargeNotice('Your Netflix payment of ₹649 was successful. Thanks for being a member.')).toBe(false);
   });
 });
 

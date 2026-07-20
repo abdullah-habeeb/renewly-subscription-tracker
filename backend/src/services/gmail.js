@@ -172,6 +172,25 @@ function isBulkMail(headers) {
   return Boolean(headers['list-unsubscribe']) || /bulk/i.test(headers.precedence || '');
 }
 
+// Distinguishes an actual completed charge from mail that merely *mentions*
+// an amount — trial-ending reminders, declined-payment alerts, and
+// suspension notices all cite what you'd be charged without a charge ever
+// happening. Verified against a real inbox: a Google One "subscription
+// suspended due to payment issue" email and two "your trial will end"
+// reminders all quoted the plan's ₹1,950 price, none of them a real charge —
+// while the genuine ₹59 receipt for a *different*, newly purchased plan said
+// none of these things. Left unfiltered, the phantom entries corrupt a
+// merchant's charge history: their scattered dates wreck the interval-
+// average calculation, and one can even get picked as "the last charge"
+// over the real receipt. "cancel"/"trial" alone are too common in ordinary
+// receipt footers ("Learn how to cancel") to use as bare signals — every
+// phrase here specifically describes a failed, pending, or expiring state.
+function isNonChargeNotice(text) {
+  return /payment (?:was |is )?declined|subscription (?:suspended|will be cancell?ed|cancell?ed)|trial (?:for [^.]*)?will end|your trial (?:has|will) end(?:ed)?|update (?:your )?payment(?:\s?method)?|payment (?:failed|issue|unsuccessful)|reactivate your subscription/i.test(
+    text,
+  );
+}
+
 // Pulls candidate billing transactions out of one linked inbox.
 async function scanAccountTransactions(account) {
   const client = oauthClient();
@@ -221,6 +240,7 @@ async function scanAccountTransactions(account) {
       }
 
       if (!amount) continue;
+      if (isNonChargeNotice(text)) continue;
 
       const date = new Date(Number(msg.internalDate)).toISOString().split('T')[0];
       transactions.push({ merchantText: text, amount, date, subject, from, snippet });
@@ -336,5 +356,5 @@ async function scanInbox(uid) {
 
 module.exports = {
   isConfigured, getAuthUrl, handleCallback, getStatus, disconnect, scanInbox,
-  extractBodyText, isBulkMail, mergeAccountCandidates, scanLookbackDays,
+  extractBodyText, isBulkMail, isNonChargeNotice, mergeAccountCandidates, scanLookbackDays,
 };

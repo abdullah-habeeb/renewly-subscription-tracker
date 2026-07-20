@@ -41,6 +41,23 @@ function identifyMerchant(text) {
   return null;
 }
 
+// "Google One" covers materially different products at different price
+// points — a plain storage top-up vs. the AI Pro/Premium plans — that a
+// user can genuinely hold at the same time. Collapsing every match into one
+// bare "Google One" bucket merges unrelated charge histories together (see
+// detectRecurring) and, even once grouped correctly, would make a brand-new
+// plan collide by name with one the user already tracks, silently blocking
+// it from ever being offered. Verified against a real inbox: a receipt
+// reading "Price 30 GB (Google One) ₹59.00/month" is a different plan than
+// one that mentions "Google AI Pro (5 TB)" — tag each with what the email
+// actually says so they stay distinguishable.
+function googleOnePlanLabel(text) {
+  if (/ai\s?pro/i.test(text)) return 'AI Pro';
+  if (/ai\s?premium/i.test(text)) return 'AI Premium';
+  const size = text.match(/(\d+(?:\.\d+)?\s?(?:GB|TB))\s*\(Google One\)/i);
+  return size ? size[1].replace(/\s+/g, ' ').trim() : null;
+}
+
 function daysBetween(a, b) {
   return Math.abs(new Date(b) - new Date(a)) / 86_400_000;
 }
@@ -67,17 +84,19 @@ function detectRecurring(transactions) {
 
   for (const tx of transactions) {
     const merchant = identifyMerchant(tx.merchantText);
-    const key = merchant ? merchant.name : tx.merchantText.toLowerCase().slice(0, 40);
-    if (!groups.has(key)) groups.set(key, { merchant, txs: [] });
+    const variant = merchant && merchant.name === 'Google One' ? googleOnePlanLabel(tx.merchantText) : null;
+    const displayName = merchant ? (variant ? `${merchant.name} (${variant})` : merchant.name) : null;
+    const key = displayName || tx.merchantText.toLowerCase().slice(0, 40);
+    if (!groups.has(key)) groups.set(key, { merchant, displayName, txs: [] });
     groups.get(key).txs.push(tx);
   }
 
   const detected = [];
 
-  for (const { merchant, txs } of groups.values()) {
+  for (const { merchant, displayName, txs } of groups.values()) {
     txs.sort((a, b) => new Date(a.date) - new Date(b.date));
     const last = txs[txs.length - 1];
-    const name = merchant ? merchant.name : titleCase(last.merchantText);
+    const name = displayName || titleCase(last.merchantText);
     const category = merchant ? merchant.category : 'Other';
 
     if (txs.length >= 2) {
