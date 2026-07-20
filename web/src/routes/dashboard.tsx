@@ -427,8 +427,11 @@ function SubscriptionRow({
             <SourceBadge source={sub.source} accounts={sub.sourceAccounts} />
           )}
         </p>
-        <p className="text-xs text-muted-foreground">
+        <p className="truncate text-xs text-muted-foreground">
           {sub.category} · {sub.billingCycle}
+          {sub.sourceAccounts && sub.sourceAccounts.length > 0 && (
+            <> · {sub.sourceAccounts.join(", ")}</>
+          )}
         </p>
       </div>
       <div className="text-right tabular-nums">

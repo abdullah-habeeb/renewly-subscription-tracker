@@ -161,6 +161,21 @@ function BankCard({ user }: { user: User }) {
         <ConnectionStatusSkeleton />
       ) : (
         <div className="space-y-4">
+          <div className="rounded-xl border border-border/60 bg-surface/60 px-4 py-3 text-xs leading-relaxed text-muted-foreground">
+            <p className="font-medium text-foreground">Why is this a sandbox, not my real bank?</p>
+            <p className="mt-1.5">
+              Plaid — the bank-linking provider wired up here — doesn't cover Indian banks; it's
+              built for the US and Europe. India's equivalent is the RBI-regulated{" "}
+              <span className="text-foreground">Account Aggregator (AA)</span> network, where you
+              consent to share bank-statement data through a licensed intermediary (e.g. Setu,
+              OneMoney) the same way Plaid does for US accounts. Going live with real accounts on
+              either rail needs a registered business entity — outside the scope of a portfolio
+              project. This card runs the exact same Link-and-scan architecture end to end on
+              Plaid's Sandbox test banks, so the pattern is proven and ready to point at a real
+              provider later.
+            </p>
+          </div>
+
           <div className="flex items-center justify-between rounded-xl border border-border/60 bg-surface/60 px-4 py-3">
             <div className="flex items-center gap-3">
               {status.connected ? (
