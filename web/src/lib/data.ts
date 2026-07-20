@@ -178,7 +178,11 @@ export async function storeDetectedCandidates(
       billingCycle: d.data().billingCycle as string,
       dismissedPriceAmount: (d.data().dismissedPriceAmount as number | null) ?? null,
     }));
-    priceChanges = detectPriceChanges(tracked, items).filter((change) => {
+    // needsDetails candidates carry a placeholder amount (0), never a real
+    // price — comparing that against a tracked subscription would flag a
+    // bogus "price dropped to ₹0".
+    const priced = items.filter((item) => !item.needsDetails);
+    priceChanges = detectPriceChanges(tracked, priced).filter((change) => {
       const sub = tracked.find((t) => t.id === change.subscriptionId);
       return sub?.dismissedPriceAmount !== change.newAmount;
     });
@@ -228,6 +232,15 @@ export async function approveDetected(det: DetectedSubscription) {
     det.source,
   );
   await updateDoc(doc(db, "detected", det.id), { status: "approved" });
+}
+
+/**
+ * A needsDetails nudge doesn't have real data to copy — the user completes
+ * it themselves via SubscriptionDialog, which calls addSubscription
+ * directly. This just retires the nudge from the review queue afterward.
+ */
+export function markDetectedApproved(id: string) {
+  return updateDoc(doc(db, "detected", id), { status: "approved" });
 }
 
 export function dismissDetected(id: string) {

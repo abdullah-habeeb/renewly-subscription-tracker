@@ -192,6 +192,26 @@ describe('isNonChargeNotice', () => {
   test('does not flag an ordinary Netflix payment receipt', () => {
     expect(isNonChargeNotice('Your Netflix payment of ₹649 was successful. Thanks for being a member.')).toBe(false);
   });
+
+  // Regression, verified against the real inbox (2026-07-21): Anthropic's
+  // "subscription access has been paused" notice phrases the same failed-
+  // payment situation differently than Google's — "payment was unsuccessful"
+  // (not adjacent, as the original regex required) and "access...paused"
+  // (a phrasing the Google-derived pattern list didn't cover at all).
+  test('flags a "payment was unsuccessful" / "access paused" notice', () => {
+    const text =
+      "Your subscription access has been paused Your most recent payment was unsuccessful, and your access to Claude's paid features has been paused. To restore access, please pay the outstanding invoice.";
+    expect(isNonChargeNotice(text)).toBe(true);
+  });
+
+  // A genuine "your card was charged" confirmation must survive even though
+  // it has no amount to extract — this is exactly the case the "add
+  // details" nudge exists for (see scanAccountTransactions' mentions map).
+  test('does not flag a genuine charge confirmation with no stated amount', () => {
+    const text =
+      'Welcome to the Pro plan Thanks for starting your Pro subscription, Abdullah Your payment method has been charged. The next charge will be on Aug 5, 2026.';
+    expect(isNonChargeNotice(text)).toBe(false);
+  });
 });
 
 describe('scanLookbackDays', () => {

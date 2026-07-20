@@ -49,6 +49,11 @@ describe('identifyMerchant', () => {
     expect(identifyMerchant('Local Grocery Store purchase')).toBeNull();
   });
 
+  test('matches Claude / Anthropic', () => {
+    expect(identifyMerchant('Welcome to Claude Code')?.name).toBe('Claude Pro');
+    expect(identifyMerchant('Your Anthropic invoice is ready')?.name).toBe('Claude Pro');
+  });
+
   // Regression: Google's real Play Store billing emails say "Google One
   // (Google AI Pro (5 TB))", not literally "Google One" on its own — a
   // plain /google\s?one/ pattern still happens to match here since "Google

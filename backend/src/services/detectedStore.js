@@ -55,6 +55,10 @@ async function storeCandidates(uid, items, source) {
     );
     const flagged = new Set();
     for (const item of items) {
+      // needsDetails candidates carry a placeholder amount (0), never a real
+      // price — comparing that against a tracked subscription would flag a
+      // bogus "price dropped to ₹0".
+      if (item.needsDetails) continue;
       const subDoc = byName.get(item.name.toLowerCase());
       if (!subDoc || flagged.has(subDoc.id)) continue;
       const sub = subDoc.data();

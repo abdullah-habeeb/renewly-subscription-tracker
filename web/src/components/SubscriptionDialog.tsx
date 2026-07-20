@@ -53,52 +53,68 @@ const subscriptionSchema = z
 
 type SubscriptionFormValues = z.infer<typeof subscriptionSchema>;
 
+/** Seeds the "add" form without switching the dialog into edit mode. */
+interface Prefill {
+  name: string;
+  category?: string;
+  startDate?: string;
+  source?: Subscription["source"];
+  sourceAccounts?: string[];
+}
+
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   uid: string;
   /** When set, the dialog edits this subscription instead of creating one. */
   editing?: Subscription | null;
+  /** Seeds name/category/startDate for a fresh "add" — e.g. completing a
+   *  scan nudge that found a merchant but no price. Ignored when editing. */
+  prefill?: Prefill | null;
+  /** Called after a successful add or edit, before the dialog closes. */
+  onSaved?: () => void;
 }
 
-function defaultValues(editing?: Subscription | null): SubscriptionFormValues {
-  return editing
-    ? {
-        name: editing.name,
-        amount: editing.amount,
-        category: editing.category,
-        billingCycle: editing.billingCycle,
-        startDate: editing.startDate ?? new Date().toISOString().split("T")[0],
-        endDate: editing.endDate ?? "",
-      }
-    : {
-        name: "",
-        amount: 0,
-        category: "Entertainment",
-        billingCycle: "monthly",
-        startDate: new Date().toISOString().split("T")[0],
-        endDate: "",
-      };
+function defaultValues(editing?: Subscription | null, prefill?: Prefill | null): SubscriptionFormValues {
+  if (editing) {
+    return {
+      name: editing.name,
+      amount: editing.amount,
+      category: editing.category,
+      billingCycle: editing.billingCycle,
+      startDate: editing.startDate ?? new Date().toISOString().split("T")[0],
+      endDate: editing.endDate ?? "",
+    };
+  }
+  return {
+    name: prefill?.name ?? "",
+    amount: 0,
+    category: prefill?.category ?? "Entertainment",
+    billingCycle: "monthly",
+    startDate: prefill?.startDate ?? new Date().toISOString().split("T")[0],
+    endDate: "",
+  };
 }
 
-export function SubscriptionDialog({ open, onOpenChange, uid, editing }: Props) {
+export function SubscriptionDialog({ open, onOpenChange, uid, editing, prefill, onSaved }: Props) {
   const [saving, setSaving] = useState(false);
   const form = useForm<SubscriptionFormValues>({
     resolver: zodResolver(subscriptionSchema),
-    defaultValues: defaultValues(editing),
+    defaultValues: defaultValues(editing, prefill),
   });
 
   useEffect(() => {
-    if (open) form.reset(defaultValues(editing));
+    if (open) form.reset(defaultValues(editing, prefill));
     // form.reset is stable across renders — only re-seed when the dialog opens or the target changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, editing]);
+  }, [open, editing, prefill]);
 
   const onSubmit = async (values: SubscriptionFormValues) => {
     const payload = {
       ...values,
       name: values.name.trim(),
       endDate: values.endDate || null,
+      ...(!editing && prefill?.sourceAccounts ? { sourceAccounts: prefill.sourceAccounts } : {}),
     };
     setSaving(true);
     try {
@@ -106,9 +122,10 @@ export function SubscriptionDialog({ open, onOpenChange, uid, editing }: Props) 
         await updateSubscription(editing.id, payload);
         toast.success(`${payload.name} updated`);
       } else {
-        await addSubscription(uid, payload);
+        await addSubscription(uid, payload, prefill?.source ?? "manual");
         toast.success(`${payload.name} added`);
       }
+      onSaved?.();
       onOpenChange(false);
     } catch (err) {
       console.error(err);
@@ -123,12 +140,14 @@ export function SubscriptionDialog({ open, onOpenChange, uid, editing }: Props) 
       <DialogContent className="border-border/60 bg-card-gradient backdrop-blur-xl sm:rounded-3xl">
         <DialogHeader>
           <DialogTitle className="font-display text-2xl font-normal tracking-tight">
-            {editing ? "Edit subscription" : "Add a subscription"}
+            {editing ? "Edit subscription" : prefill ? "Add the details" : "Add a subscription"}
           </DialogTitle>
           <DialogDescription>
             {editing
               ? "Update the details below."
-              : "Track anything that bills you on a schedule."}
+              : prefill
+                ? "We spotted this in your inbox but couldn't find a price — fill in the rest."
+                : "Track anything that bills you on a schedule."}
           </DialogDescription>
         </DialogHeader>
 

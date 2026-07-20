@@ -57,6 +57,8 @@ export interface ScanCandidate {
   evidence?: string;
   /** Which linked Gmail address(es) this charge was found in. */
   sourceAccounts?: string[];
+  /** A known merchant was mentioned but no price could be found — amount is a placeholder (0). */
+  needsDetails?: boolean;
 }
 
 export interface PlaidStatus {

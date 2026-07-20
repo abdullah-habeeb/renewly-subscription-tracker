@@ -31,6 +31,7 @@ import {
   deleteSubscription,
   dismissDetected,
   dismissPriceChange,
+  markDetectedApproved,
   useDetected,
   useSubscriptions,
 } from "@/lib/data";
@@ -68,6 +69,7 @@ function Dashboard({ user }: { user: User }) {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Subscription | null>(null);
   const [cancelFor, setCancelFor] = useState<Subscription | null>(null);
+  const [nudgeFor, setNudgeFor] = useState<DetectedSubscription | null>(null);
 
   // Subscriptions past their till date drop out of every money figure and
   // move to a "these ended" prompt — they're only removed with permission.
@@ -115,8 +117,9 @@ function Dashboard({ user }: { user: User }) {
     [activeSubs],
   );
 
-  const openAdd = () => { setEditing(null); setDialogOpen(true); };
-  const openEdit = (sub: Subscription) => { setEditing(sub); setDialogOpen(true); };
+  const openAdd = () => { setEditing(null); setNudgeFor(null); setDialogOpen(true); };
+  const openEdit = (sub: Subscription) => { setEditing(sub); setNudgeFor(null); setDialogOpen(true); };
+  const openNudge = (item: DetectedSubscription) => { setEditing(null); setNudgeFor(item); setDialogOpen(true); };
 
   return (
     <div className="space-y-8">
@@ -140,7 +143,7 @@ function Dashboard({ user }: { user: User }) {
       </div>
 
       {/* Detected review banner */}
-      {detected.length > 0 && <DetectedPanel items={detected} />}
+      {detected.length > 0 && <DetectedPanel items={detected} onAddDetails={openNudge} />}
 
       {/* Price changes spotted by scans — amounts only change with permission */}
       {priceChanged.length > 0 && <PriceChangePanel items={priceChanged} />}
@@ -308,9 +311,26 @@ function Dashboard({ user }: { user: User }) {
 
       <SubscriptionDialog
         open={dialogOpen}
-        onOpenChange={setDialogOpen}
+        onOpenChange={(open) => {
+          setDialogOpen(open);
+          if (!open) setNudgeFor(null);
+        }}
         uid={user.uid}
         editing={editing}
+        prefill={
+          nudgeFor
+            ? {
+                name: nudgeFor.name,
+                category: nudgeFor.category,
+                startDate: nudgeFor.lastChargeDate,
+                source: nudgeFor.source,
+                sourceAccounts: nudgeFor.sourceAccounts,
+              }
+            : null
+        }
+        onSaved={() => {
+          if (nudgeFor) markDetectedApproved(nudgeFor.id);
+        }}
       />
       <CancellationGuideDialog sub={cancelFor} onClose={() => setCancelFor(null)} />
     </div>
@@ -543,7 +563,9 @@ function EmptyState({ onAdd }: { onAdd: () => void }) {
   );
 }
 
-function DetectedPanel({ items }: { items: DetectedSubscription[] }) {
+function DetectedPanel({
+  items, onAddDetails,
+}: { items: DetectedSubscription[]; onAddDetails: (item: DetectedSubscription) => void }) {
   const [busy, setBusy] = useState<string | null>(null);
 
   const act = async (item: DetectedSubscription, approve: boolean) => {
@@ -588,7 +610,7 @@ function DetectedPanel({ items }: { items: DetectedSubscription[] }) {
                   <SourceBadge source={item.source} accounts={item.sourceAccounts} />
                 </p>
                 <p className="text-xs text-muted-foreground tabular-nums">
-                  {inrExact.format(item.amount)} · {item.billingCycle}
+                  {item.needsDetails ? "Price not found — add it yourself" : `${inrExact.format(item.amount)} · ${item.billingCycle}`}
                 </p>
                 {item.evidence && (
                   <p className="mt-1 line-clamp-2 text-[11px] text-muted-foreground/70">
@@ -601,14 +623,23 @@ function DetectedPanel({ items }: { items: DetectedSubscription[] }) {
               </span>
             </div>
             <div className="mt-3 flex gap-2">
-              <button
-                onClick={() => act(item, true)}
-                disabled={busy === item.id}
-                className="flex flex-1 items-center justify-center gap-1.5 rounded-full bg-gradient-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground disabled:opacity-60"
-              >
-                {busy === item.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
-                Track it
-              </button>
+              {item.needsDetails ? (
+                <button
+                  onClick={() => onAddDetails(item)}
+                  className="flex flex-1 items-center justify-center gap-1.5 rounded-full bg-gradient-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground"
+                >
+                  <Pencil className="h-3 w-3" /> Add details
+                </button>
+              ) : (
+                <button
+                  onClick={() => act(item, true)}
+                  disabled={busy === item.id}
+                  className="flex flex-1 items-center justify-center gap-1.5 rounded-full bg-gradient-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground disabled:opacity-60"
+                >
+                  {busy === item.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
+                  Track it
+                </button>
+              )}
               <button
                 onClick={() => act(item, false)}
                 disabled={busy === item.id}

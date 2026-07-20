@@ -101,8 +101,8 @@ function renderDigestHtml(items, dashboardUrl) {
       (s) => `
         <tr>
           <td style="padding:12px 16px;border-bottom:1px solid #2e4a3f;font-weight:600;">${s.name}</td>
-          <td style="padding:12px 16px;border-bottom:1px solid #2e4a3f;">${inr.format(s.amount)}</td>
-          <td style="padding:12px 16px;border-bottom:1px solid #2e4a3f;">${s.billingCycle}</td>
+          <td style="padding:12px 16px;border-bottom:1px solid #2e4a3f;">${s.needsDetails ? '—' : inr.format(s.amount)}</td>
+          <td style="padding:12px 16px;border-bottom:1px solid #2e4a3f;">${s.needsDetails ? 'add price' : s.billingCycle}</td>
         </tr>`,
     )
     .join('');
@@ -143,7 +143,9 @@ async function sendDigestEmail(to, items) {
   const dashboardUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/dashboard`;
   const subject =
     items.length === 1
-      ? `🔎 Renewly found a new subscription: ${items[0].name} (${inr.format(items[0].amount)})`
+      ? items[0].needsDetails
+        ? `🔎 Renewly spotted ${items[0].name} — add the price to start tracking`
+        : `🔎 Renewly found a new subscription: ${items[0].name} (${inr.format(items[0].amount)})`
       : `🔎 Renewly found ${items.length} new subscriptions in your inbox`;
 
   await transporter.sendMail({

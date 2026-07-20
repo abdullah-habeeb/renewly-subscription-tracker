@@ -2,7 +2,7 @@ const { google } = require('googleapis');
 const crypto = require('crypto');
 const tokenStore = require('./tokenStore');
 const ai = require('./ai');
-const { extractAmount, detectRecurring } = require('./detector');
+const { extractAmount, detectRecurring, identifyMerchant } = require('./detector');
 
 const CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
@@ -127,7 +127,7 @@ function scanLookbackDays(lastScanAt, now = new Date()) {
 function searchQueries(lookbackDays) {
   return [
     `newer_than:${lookbackDays}d (subject:(debited OR "payment successful" OR receipt OR renewal OR invoice OR "auto pay" OR autopay) (₹ OR INR OR Rs))`,
-    `newer_than:${lookbackDays}d from:(netflix.com OR spotify.com OR google.com OR apple.com OR amazon.in OR openai.com OR adobe.com OR hotstar.com)`,
+    `newer_than:${lookbackDays}d from:(netflix.com OR spotify.com OR google.com OR apple.com OR amazon.in OR openai.com OR adobe.com OR hotstar.com OR anthropic.com OR claude.com)`,
   ];
 }
 
@@ -186,7 +186,7 @@ function isBulkMail(headers) {
 // receipt footers ("Learn how to cancel") to use as bare signals — every
 // phrase here specifically describes a failed, pending, or expiring state.
 function isNonChargeNotice(text) {
-  return /payment (?:was |is )?declined|subscription (?:suspended|will be cancell?ed|cancell?ed)|trial (?:for [^.]*)?will end|your trial (?:has|will) end(?:ed)?|update (?:your )?payment(?:\s?method)?|payment (?:failed|issue|unsuccessful)|reactivate your subscription/i.test(
+  return /payment (?:was |is )?(?:declined|failed|issue|unsuccessful)|subscription (?:suspended|will be cancell?ed|cancell?ed)|(?:subscription|access)[^.]*\bpaused\b|trial (?:for [^.]*)?will end|your trial (?:has|will) end(?:ed)?|update (?:your )?payment(?:\s?method)?|reactivate your subscription/i.test(
     text,
   );
 }
@@ -206,6 +206,16 @@ async function scanAccountTransactions(account) {
   }
 
   const transactions = [];
+  // Known-merchant emails that never state a price — e.g. a product's
+  // "Welcome to Claude Code" onboarding email, sent instead of (or without)
+  // a payment receipt. There's no amount anywhere to extract, so these can
+  // never become a real transaction — but silently dropping them means a
+  // subscription paid via a channel with no email trail (UPI apps, mainly)
+  // never appears at all. Collected separately and turned into low-
+  // confidence "add the details yourself" nudges in scanAccount below.
+  // Keyed by merchant name to dedupe repeat mentions within one scan.
+  const mentions = new Map();
+
   for (const id of ids) {
     try {
       // Fast path: headers + snippet only. Cheap, and enough for receipts
@@ -226,6 +236,7 @@ async function scanAccountTransactions(account) {
       const subject = headers.subject || '';
       const from = headers.from || '';
       const snippet = msg.snippet || '';
+      const date = new Date(Number(msg.internalDate)).toISOString().split('T')[0];
       let text = `${subject} ${from} ${snippet}`;
       let amount = extractAmount(text);
 
@@ -239,17 +250,43 @@ async function scanAccountTransactions(account) {
         amount = extractAmount(text);
       }
 
-      if (!amount) continue;
       if (isNonChargeNotice(text)) continue;
 
-      const date = new Date(Number(msg.internalDate)).toISOString().split('T')[0];
+      if (!amount) {
+        // Identity comes from who sent it and what the subject says, not
+        // arbitrary body/snippet text — a transactional email from a known
+        // merchant can still ramble about unrelated things in its body (a
+        // job-application confirmation that happens to mention "via
+        // LinkedIn" must not become a "LinkedIn Premium" nudge just because
+        // LinkedIn is a known merchant elsewhere in the list).
+        const merchant = identifyMerchant(`${subject} ${from}`);
+        if (merchant) {
+          // Compare full timestamps, not just the YYYY-MM-DD `date` string —
+          // several real candidate emails (a login-link email and the actual
+          // "Welcome to the Pro plan" charge confirmation) landed on the
+          // same calendar day, so day-granularity comparison always tied
+          // and silently kept whichever was encountered first.
+          const existing = mentions.get(merchant.name);
+          if (!existing || Number(msg.internalDate) > existing.internalDate) {
+            mentions.set(merchant.name, {
+              name: merchant.name,
+              category: merchant.category,
+              subject,
+              date,
+              internalDate: Number(msg.internalDate),
+            });
+          }
+        }
+        continue;
+      }
+
       transactions.push({ merchantText: text, amount, date, subject, from, snippet });
     } catch (err) {
       console.warn(`Skipping message ${id}: ${err.message}`);
     }
   }
 
-  return transactions;
+  return { transactions, mentions: [...mentions.values()] };
 }
 
 // The same service charged in two linked inboxes (family plans, forwarded
@@ -281,7 +318,7 @@ const TOKEN_EXPIRED = /invalid_grant|invalid_rapt/i;
 
 async function scanAccount(uid, account) {
   try {
-    const transactions = await scanAccountTransactions(account);
+    const { transactions, mentions } = await scanAccountTransactions(account);
     const candidates = detectRecurring(transactions);
 
     // Second pass: Claude fits emails the regex heuristics couldn't — unknown
@@ -299,6 +336,28 @@ async function scanAccount(uid, account) {
       } catch (err) {
         console.warn('AI extraction failed (continuing with heuristic results):', err.message);
       }
+    }
+
+    // Known merchants mentioned with no price anywhere (a product's welcome
+    // email, not a receipt — the only trace of a subscription paid through a
+    // channel that emails no receipt at all, e.g. most UPI apps) become a
+    // low-confidence "add the details yourself" nudge instead of vanishing.
+    // Skipped when a real candidate for the same merchant already exists —
+    // startsWith covers Google One's plan-variant suffixing (see detector.js).
+    for (const m of mentions) {
+      const alreadyCovered = candidates.some((c) => c.name.toLowerCase().startsWith(m.name.toLowerCase()));
+      if (alreadyCovered) continue;
+      candidates.push({
+        name: m.name,
+        category: m.category,
+        amount: 0,
+        billingCycle: 'monthly',
+        lastChargeDate: m.date,
+        nextDueDate: m.date,
+        confidence: 0.35,
+        evidence: `Mentioned in an email, but no price was found: "${m.subject}". Add the details yourself.`,
+        needsDetails: true,
+      });
     }
 
     await tokenStore.setAccount(uid, account.address, {

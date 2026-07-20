@@ -13,6 +13,7 @@ const KNOWN_MERCHANTS = [
   { match: /canva/i, name: 'Canva', category: 'Software' },
   { match: /notion/i, name: 'Notion', category: 'Software' },
   { match: /openai|chatgpt/i, name: 'ChatGPT Plus', category: 'Software' },
+  { match: /\bclaude\b|anthropic/i, name: 'Claude Pro', category: 'Software' },
   { match: /cult\.?fit|cultfit/i, name: 'Cult.fit', category: 'Fitness' },
   { match: /zomato\s?(gold|pro)/i, name: 'Zomato Gold', category: 'Food' },
   { match: /swiggy\s?one/i, name: 'Swiggy One', category: 'Food' },
