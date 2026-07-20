@@ -1,4 +1,4 @@
-const { extractBodyText, isBulkMail } = require('./gmail');
+const { extractBodyText, isBulkMail, mergeAccountCandidates, scanLookbackDays } = require('./gmail');
 const { extractAmount } = require('./detector');
 
 function b64(str) {
@@ -91,5 +91,90 @@ describe('isBulkMail', () => {
 
   test('handles an empty headers object', () => {
     expect(isBulkMail({})).toBe(false);
+  });
+});
+
+describe('mergeAccountCandidates', () => {
+  const cand = (name, confidence, account, extra = {}) => ({
+    name,
+    amount: 649,
+    billingCycle: 'monthly',
+    category: 'Entertainment',
+    confidence,
+    sourceAccounts: [account],
+    ...extra,
+  });
+
+  test('keeps candidates with distinct names from different inboxes', () => {
+    const merged = mergeAccountCandidates([
+      cand('Netflix', 0.9, 'a@gmail.com'),
+      cand('Spotify', 0.8, 'b@gmail.com'),
+    ]);
+    expect(merged).toHaveLength(2);
+  });
+
+  // A family Netflix plan billed to one inbox and receipted in another is
+  // one subscription — never two rows.
+  test('merges the same service found in two inboxes, remembering both', () => {
+    const merged = mergeAccountCandidates([
+      cand('Netflix', 0.9, 'a@gmail.com'),
+      cand('netflix', 0.7, 'b@gmail.com'),
+    ]);
+    expect(merged).toHaveLength(1);
+    expect(merged[0].sourceAccounts.sort()).toEqual(['a@gmail.com', 'b@gmail.com']);
+  });
+
+  test('the higher-confidence candidate wins the merge regardless of order', () => {
+    const low = cand('Netflix', 0.6, 'a@gmail.com', { amount: 199 });
+    const high = cand('Netflix', 0.95, 'b@gmail.com', { amount: 649 });
+    for (const order of [[low, high], [high, low]]) {
+      const merged = mergeAccountCandidates(order);
+      expect(merged).toHaveLength(1);
+      expect(merged[0].amount).toBe(649);
+      expect(merged[0].confidence).toBe(0.95);
+      expect(merged[0].sourceAccounts.sort()).toEqual(['a@gmail.com', 'b@gmail.com']);
+    }
+  });
+
+  test('does not duplicate an address the winner already has', () => {
+    const merged = mergeAccountCandidates([
+      cand('Netflix', 0.9, 'a@gmail.com'),
+      cand('Netflix', 0.7, 'a@gmail.com'),
+    ]);
+    expect(merged[0].sourceAccounts).toEqual(['a@gmail.com']);
+  });
+
+  test('tolerates candidates without sourceAccounts (AI second pass)', () => {
+    const noAccounts = { name: 'Notion', amount: 350, billingCycle: 'monthly', category: 'Software', confidence: 0.8 };
+    const merged = mergeAccountCandidates([noAccounts]);
+    expect(merged).toHaveLength(1);
+    expect(merged[0].sourceAccounts).toEqual([]);
+  });
+});
+
+describe('scanLookbackDays', () => {
+  const now = new Date('2026-07-20T08:00:00Z');
+  const daysAgo = (n) => new Date(now.getTime() - n * 86_400_000).toISOString();
+
+  test('first scan reads the full 180-day window', () => {
+    expect(scanLookbackDays(undefined, now)).toBe(180);
+    expect(scanLookbackDays(null, now)).toBe(180);
+  });
+
+  test('a recent re-scan shrinks to the 40-day floor, never below', () => {
+    expect(scanLookbackDays(daysAgo(1), now)).toBe(40);
+    expect(scanLookbackDays(daysAgo(30), now)).toBe(40);
+  });
+
+  test('a stale re-scan covers the gap plus margin', () => {
+    expect(scanLookbackDays(daysAgo(100), now)).toBe(105);
+  });
+
+  test('caps at the full window for very stale scans', () => {
+    expect(scanLookbackDays(daysAgo(400), now)).toBe(180);
+  });
+
+  test('an unparseable timestamp falls back to the full window', () => {
+    expect(scanLookbackDays('not-a-date', now)).toBe(180);
   });
 });

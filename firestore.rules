@@ -22,11 +22,12 @@ service cloud.firestore {
       allow read, write: if signedInAs(uid);
     }
 
-    // OAuth/bank tokens — server (Admin SDK) only, never clients.
-    match /gmailTokens/{uid} {
+    // OAuth/bank tokens — server (Admin SDK) only, never clients. The
+    // recursive wildcard also covers gmailTokens/{uid}/accounts/{address}.
+    match /gmailTokens/{document=**} {
       allow read, write: if false;
     }
-    match /plaidTokens/{uid} {
+    match /plaidTokens/{document=**} {
       allow read, write: if false;
     }
   }

@@ -85,9 +85,13 @@ function scheduleReminders() {
     console.warn('⏸️  Reminder cron disabled (needs Firebase service credentials + SMTP config).');
     return;
   }
-  // 08:00 IST every day.
-  cron.schedule('0 8 * * *', () => {
-    runReminders().then((r) => console.log('Reminder run:', JSON.stringify(r)));
+  // 08:00 IST every day. The auto-rescan piggybacks on the same tick; it
+  // no-ops for users scanned within the last week.
+  const { runAutoRescans } = require('./autoscan');
+  cron.schedule('0 8 * * *', async () => {
+    const reminders = await runReminders();
+    const autoscan = await runAutoRescans();
+    console.log('Daily run:', JSON.stringify({ reminders, autoscan }));
   }, { timezone: 'Asia/Kolkata' });
   console.log('⏰ Reminder cron scheduled: daily 08:00 IST');
 }

@@ -5,6 +5,9 @@ jest.mock('./jobs/reminders', () => ({
   runReminders: jest.fn().mockResolvedValue({ ok: true, usersChecked: 0, emailsSent: 0 }),
   scheduleReminders: jest.fn(),
 }));
+jest.mock('./jobs/autoscan', () => ({
+  runAutoRescans: jest.fn().mockResolvedValue({ ok: true, usersScanned: 0, found: 0, digestsSent: 0 }),
+}));
 
 const request = require('supertest');
 const app = require('./server');
@@ -63,13 +66,16 @@ describe('POST /api/reminders/run', () => {
     expect(res.status).toBe(401);
   });
 
-  test('runs the (mocked) job when the secret matches', async () => {
+  test('runs the (mocked) reminder + auto-rescan jobs when the secret matches', async () => {
     process.env.CRON_SECRET = 'test-secret';
     const res = await request(app)
       .post('/api/reminders/run')
       .set('x-cron-secret', 'test-secret');
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ ok: true, usersChecked: 0, emailsSent: 0 });
+    expect(res.body).toEqual({
+      reminders: { ok: true, usersChecked: 0, emailsSent: 0 },
+      autoscan: { ok: true, usersScanned: 0, found: 0, digestsSent: 0 },
+    });
   });
 });
 

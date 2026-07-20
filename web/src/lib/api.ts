@@ -23,12 +23,27 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return body as T;
 }
 
+export interface GmailAccount {
+  address: string;
+  connectedAt?: string;
+  lastScanAt?: string;
+  /** Google expired this account's access (test-mode tokens last ~7 days). */
+  needsReauth?: boolean;
+}
+
 export interface GmailStatus {
   configured: boolean; // Google OAuth credentials present on the server
   connected: boolean;
-  address?: string;
-  lastScanAt?: string;
+  accounts: GmailAccount[];
   demo: boolean;
+}
+
+/** Per-inbox outcome of a multi-account scan. */
+export interface ScanAccountResult {
+  address: string;
+  ok: boolean;
+  error?: string;
+  found: number;
 }
 
 export interface ScanCandidate {
@@ -40,6 +55,8 @@ export interface ScanCandidate {
   nextDueDate: string;
   confidence: number;
   evidence?: string;
+  /** Which linked Gmail address(es) this charge was found in. */
+  sourceAccounts?: string[];
 }
 
 export interface PlaidStatus {
@@ -54,8 +71,15 @@ export const api = {
   gmailStatus: () => request<GmailStatus>("/gmail/status"),
   gmailAuthUrl: () => request<{ url?: string; demo: boolean }>("/gmail/auth-url"),
   gmailScan: () =>
-    request<{ demo: boolean; items: ScanCandidate[] }>("/gmail/scan", { method: "POST" }),
-  gmailDisconnect: () => request<{ ok: boolean }>("/gmail/disconnect", { method: "POST" }),
+    request<{ demo: boolean; items: ScanCandidate[]; accounts?: ScanAccountResult[] }>(
+      "/gmail/scan",
+      { method: "POST" },
+    ),
+  gmailDisconnect: (address?: string) =>
+    request<{ ok: boolean }>("/gmail/disconnect", {
+      method: "POST",
+      body: JSON.stringify(address ? { address } : {}),
+    }),
 
   plaidStatus: () => request<PlaidStatus>("/plaid/status"),
   plaidLinkToken: () =>

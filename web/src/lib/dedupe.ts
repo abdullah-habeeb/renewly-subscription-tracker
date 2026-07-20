@@ -43,3 +43,57 @@ export function planDedupe(
 
   return { staleIds, blockedNames };
 }
+
+// ---------- Price-change detection ----------
+
+export interface TrackedForPricing {
+  id: string;
+  name: string;
+  amount: number;
+  billingCycle: string;
+}
+
+export interface ScannedForPricing {
+  name: string;
+  amount: number;
+  billingCycle: string;
+}
+
+export interface PriceChange {
+  subscriptionId: string;
+  name: string;
+  oldAmount: number;
+  newAmount: number;
+}
+
+/**
+ * A scan candidate that matches a *tracked* subscription is dropped by the
+ * dedupe — but its amount is fresh evidence. When it differs from what the
+ * user tracks (same billing cycle, beyond paise/rounding noise), that's a
+ * price change worth flagging: "Netflix now bills ₹799, you track ₹649."
+ */
+export function detectPriceChanges(
+  tracked: TrackedForPricing[],
+  scanned: ScannedForPricing[],
+): PriceChange[] {
+  const byName = new Map(tracked.map((s) => [s.name.toLowerCase(), s]));
+  const changes: PriceChange[] = [];
+  const flagged = new Set<string>();
+
+  for (const item of scanned) {
+    const sub = byName.get(item.name.toLowerCase());
+    if (!sub || flagged.has(sub.id)) continue;
+    if (sub.billingCycle !== item.billingCycle) continue;
+    // Ignore sub-2% (or sub-₹1) wobble — bank alerts sometimes round paise.
+    if (Math.abs(item.amount - sub.amount) < Math.max(1, sub.amount * 0.02)) continue;
+    flagged.add(sub.id);
+    changes.push({
+      subscriptionId: sub.id,
+      name: sub.name,
+      oldAmount: sub.amount,
+      newAmount: item.amount,
+    });
+  }
+
+  return changes;
+}

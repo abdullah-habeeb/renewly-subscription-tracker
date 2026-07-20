@@ -35,7 +35,10 @@ function verifyState(state) {
 function getAuthUrl(uid) {
   return oauthClient().generateAuthUrl({
     access_type: 'offline',
-    prompt: 'consent',
+    // `consent` guarantees Google mints a refresh token on every connect;
+    // `select_account` shows the account chooser, so a user linking their
+    // second (or third) inbox isn't silently reconnected to the first one.
+    prompt: 'consent select_account',
     scope: ['https://www.googleapis.com/auth/gmail.readonly', 'email'],
     state: signState(uid),
   });
@@ -49,39 +52,84 @@ async function handleCallback(code, state) {
   const { tokens } = await client.getToken(code);
   client.setCredentials(tokens);
 
-  // Which Gmail address did we just connect?
+  // Which Gmail address did we just connect? Keys the account record, so
+  // reconnecting the same address overwrites instead of duplicating.
   const oauth2 = google.oauth2({ version: 'v2', auth: client });
   const { data: profile } = await oauth2.userinfo.get();
+  if (!profile.email) throw new Error('Google did not return the account email');
 
-  await tokenStore.set(uid, {
-    refreshToken: tokens.refresh_token,
+  const record = {
     address: profile.email,
     connectedAt: new Date().toISOString(),
-  });
+    needsReauth: false,
+  };
+  if (tokens.refresh_token) record.refreshToken = tokens.refresh_token;
+  await tokenStore.setAccount(uid, profile.email, record);
 
   return uid;
 }
 
 async function getStatus(uid) {
-  const record = await tokenStore.get(uid);
+  const accounts = await tokenStore.listAccounts(uid);
+  const sanitized = accounts
+    .map(({ address, connectedAt, lastScanAt, needsReauth }) => ({
+      address,
+      connectedAt: connectedAt || undefined,
+      lastScanAt: lastScanAt || undefined,
+      needsReauth: Boolean(needsReauth),
+    }))
+    .sort((a, b) => (a.connectedAt || '').localeCompare(b.connectedAt || ''));
   return {
     configured: isConfigured,
-    connected: Boolean(record && record.refreshToken),
-    address: record ? record.address : undefined,
-    lastScanAt: record ? record.lastScanAt : undefined,
+    connected: sanitized.length > 0,
+    accounts: sanitized,
+    // Kept for any client still on the single-account shape.
+    address: sanitized[0] ? sanitized[0].address : undefined,
+    lastScanAt: sanitized[0] ? sanitized[0].lastScanAt : undefined,
     demo: !isConfigured,
   };
 }
 
-async function disconnect(uid) {
-  await tokenStore.remove(uid);
+// Disconnects one linked address, or every one when no address is given.
+async function disconnect(uid, address) {
+  const accounts = await tokenStore.listAccounts(uid);
+  const targets = address ? accounts.filter((a) => a.address === address) : accounts;
+  for (const account of targets) {
+    if (account.refreshToken) {
+      try {
+        await oauthClient().revokeToken(account.refreshToken);
+      } catch {
+        // Token already expired or revoked — removing our record is enough.
+      }
+    }
+    await tokenStore.removeAccount(uid, account.address);
+  }
+}
+
+// How far back a scan reaches. First scans read the full window; re-scans
+// shrink it to (days since the last scan + margin) — but never below
+// MIN_LOOKBACK_DAYS, so monthly-interval detection still sees at least two
+// charges of anything that bills inside the window. Yearly detection never
+// relied on the 180-day window anyway (two charges a year apart can't both
+// fit); it comes from known-merchant single charges.
+const FULL_LOOKBACK_DAYS = 180;
+const MIN_LOOKBACK_DAYS = 40;
+
+function scanLookbackDays(lastScanAt, now = new Date()) {
+  if (!lastScanAt) return FULL_LOOKBACK_DAYS;
+  const last = new Date(lastScanAt).getTime();
+  if (Number.isNaN(last)) return FULL_LOOKBACK_DAYS;
+  const daysSince = Math.ceil((now.getTime() - last) / 86_400_000);
+  return Math.min(FULL_LOOKBACK_DAYS, Math.max(MIN_LOOKBACK_DAYS, daysSince + 5));
 }
 
 // Gmail search queries that surface bank debit alerts and subscription receipts.
-const SEARCH_QUERIES = [
-  'newer_than:180d (subject:(debited OR "payment successful" OR receipt OR renewal OR invoice OR "auto pay" OR autopay) (₹ OR INR OR Rs))',
-  'newer_than:180d from:(netflix.com OR spotify.com OR google.com OR apple.com OR amazon.in OR openai.com OR adobe.com OR hotstar.com)',
-];
+function searchQueries(lookbackDays) {
+  return [
+    `newer_than:${lookbackDays}d (subject:(debited OR "payment successful" OR receipt OR renewal OR invoice OR "auto pay" OR autopay) (₹ OR INR OR Rs))`,
+    `newer_than:${lookbackDays}d from:(netflix.com OR spotify.com OR google.com OR apple.com OR amazon.in OR openai.com OR adobe.com OR hotstar.com)`,
+  ];
+}
 
 // Decodes and flattens the readable text out of a Gmail message payload
 // (walking multipart MIME), stripping HTML tags. Capped — we only need
@@ -124,19 +172,15 @@ function isBulkMail(headers) {
   return Boolean(headers['list-unsubscribe']) || /bulk/i.test(headers.precedence || '');
 }
 
-async function scanInbox(uid) {
-  const record = await tokenStore.get(uid);
-  if (!record || !record.refreshToken) {
-    throw new Error('Gmail is not connected');
-  }
-
+// Pulls candidate billing transactions out of one linked inbox.
+async function scanAccountTransactions(account) {
   const client = oauthClient();
-  client.setCredentials({ refresh_token: record.refreshToken });
+  client.setCredentials({ refresh_token: account.refreshToken });
   const gmail = google.gmail({ version: 'v1', auth: client });
 
   // Collect unique message ids across queries (bounded to keep scans fast).
   const ids = new Set();
-  for (const q of SEARCH_QUERIES) {
+  for (const q of searchQueries(scanLookbackDays(account.lastScanAt))) {
     const { data } = await gmail.users.messages.list({ userId: 'me', q, maxResults: 100 });
     for (const m of data.messages || []) ids.add(m.id);
     if (ids.size >= 200) break;
@@ -185,30 +229,112 @@ async function scanInbox(uid) {
     }
   }
 
-  await tokenStore.set(uid, { lastScanAt: new Date().toISOString() });
+  return transactions;
+}
 
-  const candidates = detectRecurring(transactions);
-
-  // Second pass: Claude fits emails the regex heuristics couldn't — unknown
-  // merchants, single charges, unusual phrasing. Best-effort: any AI failure
-  // leaves the heuristic results intact.
-  if (ai.isConfigured && transactions.length > 0) {
-    try {
-      const aiCandidates = await ai.extractSubscriptions(transactions);
-      const known = new Set(candidates.map((c) => c.name.toLowerCase()));
-      for (const item of aiCandidates) {
-        if (known.has(item.name.toLowerCase())) continue;
-        known.add(item.name.toLowerCase());
-        candidates.push(item);
-      }
-    } catch (err) {
-      console.warn('AI extraction failed (continuing with heuristic results):', err.message);
+// The same service charged in two linked inboxes (family plans, forwarded
+// receipts) is one subscription, not two: merge by name, keep the higher-
+// confidence candidate, and remember every inbox it appeared in.
+function mergeAccountCandidates(candidates) {
+  const byName = new Map();
+  for (const cand of candidates) {
+    const key = cand.name.toLowerCase();
+    const prev = byName.get(key);
+    if (!prev) {
+      byName.set(key, { ...cand, sourceAccounts: [...(cand.sourceAccounts || [])] });
+      continue;
     }
+    const candWins = (cand.confidence || 0) > (prev.confidence || 0);
+    const keep = candWins ? { ...cand, sourceAccounts: [...(cand.sourceAccounts || [])] } : prev;
+    const other = candWins ? prev : cand;
+    for (const addr of other.sourceAccounts || []) {
+      if (!keep.sourceAccounts.includes(addr)) keep.sourceAccounts.push(addr);
+    }
+    byName.set(key, keep);
+  }
+  return [...byName.values()];
+}
+
+// Google reports an expired/revoked refresh token as invalid_grant. With the
+// OAuth app in testing mode this happens naturally every ~7 days.
+const TOKEN_EXPIRED = /invalid_grant|invalid_rapt/i;
+
+async function scanAccount(uid, account) {
+  try {
+    const transactions = await scanAccountTransactions(account);
+    const candidates = detectRecurring(transactions);
+
+    // Second pass: Claude fits emails the regex heuristics couldn't — unknown
+    // merchants, single charges, unusual phrasing. Best-effort: any AI failure
+    // leaves the heuristic results intact.
+    if (ai.isConfigured && transactions.length > 0) {
+      try {
+        const aiCandidates = await ai.extractSubscriptions(transactions);
+        const known = new Set(candidates.map((c) => c.name.toLowerCase()));
+        for (const item of aiCandidates) {
+          if (known.has(item.name.toLowerCase())) continue;
+          known.add(item.name.toLowerCase());
+          candidates.push(item);
+        }
+      } catch (err) {
+        console.warn('AI extraction failed (continuing with heuristic results):', err.message);
+      }
+    }
+
+    await tokenStore.setAccount(uid, account.address, {
+      lastScanAt: new Date().toISOString(),
+      needsReauth: false,
+    });
+    return {
+      address: account.address,
+      ok: true,
+      candidates: candidates.map((c) => ({ ...c, sourceAccounts: [account.address] })),
+    };
+  } catch (err) {
+    const needsReauth = TOKEN_EXPIRED.test(err.message || '');
+    if (needsReauth) {
+      await tokenStore.setAccount(uid, account.address, { needsReauth: true });
+    }
+    console.warn(`Gmail scan failed for ${account.address}: ${err.message}`);
+    return {
+      address: account.address,
+      ok: false,
+      error: needsReauth
+        ? 'Access expired — reconnect this account'
+        : err.message || 'Scan failed',
+      candidates: [],
+    };
+  }
+}
+
+// Scans every linked inbox (in parallel — Gmail quotas are per Google
+// account) and merges the findings. One account failing, e.g. an expired
+// test-mode token, never blocks the others.
+async function scanInbox(uid) {
+  const accounts = (await tokenStore.listAccounts(uid)).filter((a) => a.refreshToken);
+  if (accounts.length === 0) {
+    throw new Error('Gmail is not connected');
   }
 
-  return candidates;
+  const results = await Promise.all(accounts.map((account) => scanAccount(uid, account)));
+
+  if (results.every((r) => !r.ok)) {
+    // Nothing scanned at all — surface the failure instead of a silent empty result.
+    throw new Error(results[0].error || 'Scan failed');
+  }
+
+  return {
+    items: mergeAccountCandidates(results.flatMap((r) => r.candidates)),
+    accounts: results.map(({ address, ok, error, candidates }) => ({
+      address,
+      ok,
+      error,
+      found: candidates.length,
+    })),
+  };
 }
 
 module.exports = {
-  isConfigured, getAuthUrl, handleCallback, getStatus, disconnect, scanInbox, extractBodyText, isBulkMail,
+  isConfigured, getAuthUrl, handleCallback, getStatus, disconnect, scanInbox,
+  extractBodyText, isBulkMail, mergeAccountCandidates, scanLookbackDays,
 };

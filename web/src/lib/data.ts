@@ -15,7 +15,7 @@ import {
 } from "firebase/firestore";
 import type { User } from "firebase/auth";
 import { db } from "./firebase";
-import { planDedupe } from "./dedupe";
+import { detectPriceChanges, planDedupe, type PriceChange } from "./dedupe";
 import {
   calculateNextDueDate,
   type BillingCycle,
@@ -61,12 +61,16 @@ export interface SubscriptionInput {
   startDate: string;
   /** Optional "till date" — normalized to null in storage (Firestore rejects undefined). */
   endDate?: string | null;
+  /** Gmail address(es) a scanned subscription came from. Omitted = leave untouched. */
+  sourceAccounts?: string[];
 }
 
 export function addSubscription(uid: string, input: SubscriptionInput, source = "manual") {
+  const { sourceAccounts, ...rest } = input;
   return addDoc(collection(db, "subscriptions"), {
-    ...input,
+    ...rest,
     endDate: input.endDate ?? null,
+    ...(sourceAccounts && sourceAccounts.length > 0 ? { sourceAccounts } : {}),
     uid,
     source,
     nextDueDate: calculateNextDueDate(input.startDate, input.billingCycle),
@@ -75,9 +79,13 @@ export function addSubscription(uid: string, input: SubscriptionInput, source = 
 }
 
 export function updateSubscription(id: string, input: SubscriptionInput) {
+  // sourceAccounts is deliberately dropped unless provided: a manual edit in
+  // the dialog must not erase the attribution written at approve time.
+  const { sourceAccounts, ...rest } = input;
   return updateDoc(doc(db, "subscriptions", id), {
-    ...input,
+    ...rest,
     endDate: input.endDate ?? null,
+    ...(sourceAccounts !== undefined ? { sourceAccounts } : {}),
     nextDueDate: calculateNextDueDate(input.startDate, input.billingCycle),
   });
 }
@@ -120,14 +128,15 @@ export function useDetected(user: User | null) {
 /**
  * Stores scan candidates from the backend as pending "detected" docs,
  * skipping anything the user already tracks or has already been shown.
- * Returns how many new candidates were stored. Dedupe policy (incl. why
- * demo leftovers must never block real findings) lives in planDedupe.
+ * Dedupe policy (incl. why demo leftovers must never block real findings)
+ * lives in planDedupe. Candidates matching a *tracked* subscription at a
+ * different amount become pending price-change flags instead of new rows.
  */
 export async function storeDetectedCandidates(
   uid: string,
   items: Array<Omit<DetectedSubscription, "id" | "uid" | "status" | "source">>,
   source: "gmail" | "plaid" | "demo",
-): Promise<number> {
+): Promise<{ stored: number; priceChanges: PriceChange[] }> {
   const [subsSnap, detectedSnap] = await Promise.all([
     getDocs(query(collection(db, "subscriptions"), where("uid", "==", uid))),
     getDocs(query(collection(db, "detected"), where("uid", "==", uid))),
@@ -157,7 +166,52 @@ export async function storeDetectedCandidates(
     });
     stored++;
   }
-  return stored;
+
+  // Price changes only from real scans — sample data must never claim a
+  // real subscription got more expensive.
+  let priceChanges: PriceChange[] = [];
+  if (source !== "demo") {
+    const tracked = subsSnap.docs.map((d) => ({
+      id: d.id,
+      name: d.data().name as string,
+      amount: d.data().amount as number,
+      billingCycle: d.data().billingCycle as string,
+      dismissedPriceAmount: (d.data().dismissedPriceAmount as number | null) ?? null,
+    }));
+    priceChanges = detectPriceChanges(tracked, items).filter((change) => {
+      const sub = tracked.find((t) => t.id === change.subscriptionId);
+      return sub?.dismissedPriceAmount !== change.newAmount;
+    });
+    await Promise.all(
+      priceChanges.map((change) =>
+        updateDoc(doc(db, "subscriptions", change.subscriptionId), {
+          pendingPriceChange: {
+            newAmount: change.newAmount,
+            detectedAt: new Date().toISOString().split("T")[0],
+          },
+        }),
+      ),
+    );
+  }
+
+  return { stored, priceChanges };
+}
+
+/** User accepted the flagged price: the tracked amount catches up. */
+export function acceptPriceChange(sub: Subscription) {
+  return updateDoc(doc(db, "subscriptions", sub.id), {
+    amount: sub.pendingPriceChange?.newAmount ?? sub.amount,
+    pendingPriceChange: null,
+    dismissedPriceAmount: null,
+  });
+}
+
+/** User kept their tracked amount; don't re-flag this same new amount. */
+export function dismissPriceChange(sub: Subscription) {
+  return updateDoc(doc(db, "subscriptions", sub.id), {
+    pendingPriceChange: null,
+    dismissedPriceAmount: sub.pendingPriceChange?.newAmount ?? null,
+  });
 }
 
 export async function approveDetected(det: DetectedSubscription) {
@@ -169,6 +223,7 @@ export async function approveDetected(det: DetectedSubscription) {
       category: det.category || "Other",
       billingCycle: det.billingCycle,
       startDate: det.lastChargeDate,
+      ...(det.sourceAccounts ? { sourceAccounts: det.sourceAccounts } : {}),
     },
     det.source,
   );

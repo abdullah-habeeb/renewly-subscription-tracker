@@ -3,11 +3,12 @@ import { useMemo, useState, type ReactNode } from "react";
 import type { User } from "firebase/auth";
 import {
   Plus, Pencil, Trash2, CalendarClock, Wallet, Layers, Bell,
-  Inbox, Sparkles, Check, X, Loader2, Mail, Landmark, CalendarOff,
+  Inbox, Sparkles, Check, X, Loader2, Mail, Landmark, CalendarOff, Scissors, TrendingUp,
 } from "lucide-react";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as ChartTooltip } from "recharts";
 import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
+import { CancellationGuideDialog } from "@/components/CancellationGuideDialog";
 import { SubscriptionDialog } from "@/components/SubscriptionDialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -24,10 +25,12 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useCountUp } from "@/hooks/useCountUp";
 import {
+  acceptPriceChange,
   approveDetected,
   clearEndDate,
   deleteSubscription,
   dismissDetected,
+  dismissPriceChange,
   useDetected,
   useSubscriptions,
 } from "@/lib/data";
@@ -64,6 +67,7 @@ function Dashboard({ user }: { user: User }) {
   const detected = useDetected(user);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Subscription | null>(null);
+  const [cancelFor, setCancelFor] = useState<Subscription | null>(null);
 
   // Subscriptions past their till date drop out of every money figure and
   // move to a "these ended" prompt — they're only removed with permission.
@@ -73,6 +77,11 @@ function Dashboard({ user }: { user: User }) {
       endedSubs: subs.filter((s) => isEnded(s)),
     }),
     [subs],
+  );
+
+  const priceChanged = useMemo(
+    () => activeSubs.filter((s) => s.pendingPriceChange),
+    [activeSubs],
   );
 
   const stats = useMemo(() => {
@@ -133,6 +142,9 @@ function Dashboard({ user }: { user: User }) {
       {/* Detected review banner */}
       {detected.length > 0 && <DetectedPanel items={detected} />}
 
+      {/* Price changes spotted by scans — amounts only change with permission */}
+      {priceChanged.length > 0 && <PriceChangePanel items={priceChanged} />}
+
       {/* Ended subscriptions prompt (till date passed — remove only with permission) */}
       {endedSubs.length > 0 && <EndedPanel items={endedSubs} />}
 
@@ -187,7 +199,13 @@ function Dashboard({ user }: { user: User }) {
           ) : (
             <ul className="mt-4 divide-y divide-border/40">
               {activeSubs.map((sub, i) => (
-                <SubscriptionRow key={sub.id} sub={sub} onEdit={() => openEdit(sub)} delay={stagger(i)} />
+                <SubscriptionRow
+                  key={sub.id}
+                  sub={sub}
+                  onEdit={() => openEdit(sub)}
+                  onCancelGuide={() => setCancelFor(sub)}
+                  delay={stagger(i)}
+                />
               ))}
             </ul>
           )}
@@ -294,6 +312,7 @@ function Dashboard({ user }: { user: User }) {
         uid={user.uid}
         editing={editing}
       />
+      <CancellationGuideDialog sub={cancelFor} onClose={() => setCancelFor(null)} />
     </div>
   );
 }
@@ -358,7 +377,9 @@ function PanelTitle({ children }: { children: React.ReactNode }) {
   return <h2 className="font-display text-xl tracking-tight">{children}</h2>;
 }
 
-function SubscriptionRow({ sub, onEdit, delay = "0ms" }: { sub: Subscription; onEdit: () => void; delay?: string }) {
+function SubscriptionRow({
+  sub, onEdit, onCancelGuide, delay = "0ms",
+}: { sub: Subscription; onEdit: () => void; onCancelGuide: () => void; delay?: string }) {
   const days = daysUntil(sub.nextDueDate);
 
   const onDelete = async () => {
@@ -382,7 +403,9 @@ function SubscriptionRow({ sub, onEdit, delay = "0ms" }: { sub: Subscription; on
       <div className="min-w-0 flex-1">
         <p className="truncate font-medium">
           {sub.name}
-          {sub.source && sub.source !== "manual" && <SourceBadge source={sub.source} />}
+          {sub.source && sub.source !== "manual" && (
+            <SourceBadge source={sub.source} accounts={sub.sourceAccounts} />
+          )}
         </p>
         <p className="text-xs text-muted-foreground">
           {sub.category} · {sub.billingCycle}
@@ -397,6 +420,9 @@ function SubscriptionRow({ sub, onEdit, delay = "0ms" }: { sub: Subscription; on
       <div className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
         <IconBtn label="Edit" onClick={onEdit}>
           <Pencil className="h-3.5 w-3.5" />
+        </IconBtn>
+        <IconBtn label="How to cancel" onClick={onCancelGuide}>
+          <Scissors className="h-3.5 w-3.5" />
         </IconBtn>
 
         <AlertDialog>
@@ -480,13 +506,19 @@ const SOURCE_META: Record<string, { icon: typeof Mail; label: string }> = {
   demo: { icon: Sparkles, label: "demo" },
 };
 
-function SourceBadge({ source }: { source?: string }) {
+function SourceBadge({ source, accounts }: { source?: string; accounts?: string[] }) {
   const meta = source ? SOURCE_META[source] : undefined;
   if (!meta) return null;
   const Icon = meta.icon;
   return (
-    <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+    <span
+      title={accounts && accounts.length > 0 ? `Found in ${accounts.join(", ")}` : undefined}
+      className="inline-flex shrink-0 items-center gap-1 rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary"
+    >
       <Icon className="h-2.5 w-2.5" /> {meta.label}
+      {accounts && accounts.length > 1 && (
+        <span className="tabular-nums">×{accounts.length}</span>
+      )}
     </span>
   );
 }
@@ -553,7 +585,7 @@ function DetectedPanel({ items }: { items: DetectedSubscription[] }) {
               <div className="min-w-0">
                 <p className="flex items-center gap-1.5 truncate font-medium">
                   {item.name}
-                  <SourceBadge source={item.source} />
+                  <SourceBadge source={item.source} accounts={item.sourceAccounts} />
                 </p>
                 <p className="text-xs text-muted-foreground tabular-nums">
                   {inrExact.format(item.amount)} · {item.billingCycle}
@@ -587,6 +619,79 @@ function DetectedPanel({ items }: { items: DetectedSubscription[] }) {
             </div>
           </li>
         ))}
+      </ul>
+    </section>
+  );
+}
+
+function PriceChangePanel({ items }: { items: Subscription[] }) {
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const act = async (sub: Subscription, accept: boolean) => {
+    setBusy(sub.id);
+    try {
+      if (accept) {
+        await acceptPriceChange(sub);
+        toast.success(`${sub.name} updated to ${inrExact.format(sub.pendingPriceChange!.newAmount)}`);
+      } else {
+        await dismissPriceChange(sub);
+        toast.success(`Keeping ${sub.name} at ${inrExact.format(sub.amount)}`);
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("Action failed. Try again.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <section className="rounded-3xl border border-accent/30 bg-accent/5 p-6 backdrop-blur-xl">
+      <div className="flex items-center gap-2">
+        <TrendingUp className="h-4 w-4 text-accent" />
+        <h2 className="font-display text-xl tracking-tight">
+          {items.length === 1 ? "A price changed" : `${items.length} prices changed`}
+        </h2>
+      </div>
+      <p className="mt-1 text-sm text-muted-foreground">
+        Your inbox shows these billing a different amount than you're tracking. Update, or keep
+        your number.
+      </p>
+      <ul className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {items.map((sub) => {
+          const next = sub.pendingPriceChange!.newAmount;
+          const pct = Math.round(((next - sub.amount) / sub.amount) * 100);
+          const isHike = next > sub.amount;
+          return (
+            <li key={sub.id} className="rounded-2xl border border-border/60 bg-surface/60 p-4">
+              <p className="truncate font-medium">{sub.name}</p>
+              <p className="text-xs text-muted-foreground tabular-nums">
+                {inrExact.format(sub.amount)} → {inrExact.format(next)}{" "}
+                <span className={isHike ? "text-accent" : "text-primary"}>
+                  ({pct > 0 ? "+" : ""}
+                  {pct}%)
+                </span>
+              </p>
+              <div className="mt-3 flex gap-2">
+                <button
+                  onClick={() => act(sub, true)}
+                  disabled={busy === sub.id}
+                  className="flex flex-1 items-center justify-center gap-1.5 rounded-full bg-gradient-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground disabled:opacity-60"
+                >
+                  {busy === sub.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
+                  Update amount
+                </button>
+                <button
+                  onClick={() => act(sub, false)}
+                  disabled={busy === sub.id}
+                  className="flex items-center justify-center gap-1.5 rounded-full border border-border/60 px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground disabled:opacity-60"
+                >
+                  <X className="h-3 w-3" /> Keep mine
+                </button>
+              </div>
+            </li>
+          );
+        })}
       </ul>
     </section>
   );

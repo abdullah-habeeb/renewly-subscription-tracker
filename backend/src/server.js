@@ -12,6 +12,7 @@ const mailer = require('./services/mailer');
 const ai = require('./services/ai');
 const { demoDetections, bankDemoDetections } = require('./services/detector');
 const { runReminders, scheduleReminders } = require('./jobs/reminders');
+const { runAutoRescans } = require('./jobs/autoscan');
 
 const app = express();
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
@@ -77,17 +78,18 @@ app.post('/api/gmail/scan', requireAuth, async (req, res) => {
     if (!gmail.isConfigured) {
       return res.json({ demo: true, items: demoDetections() });
     }
-    const items = await gmail.scanInbox(req.uid);
-    res.json({ demo: false, items });
+    const result = await gmail.scanInbox(req.uid);
+    res.json({ demo: false, ...result });
   } catch (err) {
     console.error('Scan failed:', err.message);
     res.status(500).json({ error: err.message || 'Scan failed' });
   }
 });
 
+// Disconnects one linked address (body: { address }) or all of them.
 app.post('/api/gmail/disconnect', requireAuth, async (req, res) => {
   try {
-    await gmail.disconnect(req.uid);
+    await gmail.disconnect(req.uid, req.body?.address);
     res.json({ ok: true });
   } catch (err) {
     console.error(err);
@@ -206,7 +208,9 @@ app.post('/api/reminders/run', async (req, res) => {
   if (!secret && process.env.NODE_ENV === 'production') {
     return res.status(403).json({ error: 'Set CRON_SECRET to enable this endpoint in production' });
   }
-  res.json(await runReminders());
+  const reminders = await runReminders();
+  const autoscan = await runAutoRescans();
+  res.json({ reminders, autoscan });
 });
 
 // ---------- Errors ----------

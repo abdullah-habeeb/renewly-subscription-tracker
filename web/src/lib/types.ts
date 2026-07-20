@@ -27,6 +27,12 @@ export interface Subscription {
   /** Optional "till date": once passed, the subscription counts as ended. */
   endDate?: string | null; // YYYY-MM-DD
   source?: "manual" | "gmail" | "plaid" | "demo";
+  /** Which linked Gmail address(es) a scanned subscription was found in. */
+  sourceAccounts?: string[];
+  /** A scan saw this merchant billing a different amount — awaiting the user's call. */
+  pendingPriceChange?: { newAmount: number; detectedAt: string } | null;
+  /** Last flagged amount the user chose to ignore; suppresses re-flagging it. */
+  dismissedPriceAmount?: number | null;
   createdAt?: unknown;
 }
 
@@ -43,11 +49,15 @@ export interface DetectedSubscription {
   status: "pending" | "approved" | "dismissed";
   source: "gmail" | "plaid" | "demo";
   evidence?: string;
+  /** Which linked Gmail address(es) this candidate was found in. */
+  sourceAccounts?: string[];
 }
 
 export interface UserSettings {
   email?: string;
   reminderDays: number;
+  /** Weekly background inbox re-scan + digest email. Default on; false = opted out. */
+  autoScan?: boolean;
   gmail?: {
     connected: boolean;
     address?: string;

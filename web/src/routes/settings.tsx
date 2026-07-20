@@ -4,10 +4,12 @@ import type { User } from "firebase/auth";
 import { usePlaidLink, type PlaidLinkOnSuccessMetadata } from "react-plaid-link";
 import {
   Mail, Bell, Loader2, ScanSearch, Unplug, Send, CheckCircle2, FlaskConical, Landmark,
+  Plus, AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
 import { api, type GmailStatus, type PlaidStatus } from "@/lib/api";
 import { saveUserSettings, storeDetectedCandidates, useUserSettings } from "@/lib/data";
 
@@ -41,6 +43,7 @@ function Settings({ user }: { user: User }) {
       <ReminderCard
         uid={user.uid}
         reminderDays={settings?.reminderDays ?? 3}
+        autoScan={settings?.autoScan ?? true}
       />
     </div>
   );
@@ -115,7 +118,7 @@ function BankCard({ user }: { user: User }) {
     setBusy("scan");
     try {
       const { demo, items } = await api.plaidScan();
-      const stored = await storeDetectedCandidates(user.uid, items, demo ? "demo" : "plaid");
+      const { stored } = await storeDetectedCandidates(user.uid, items, demo ? "demo" : "plaid");
       if (stored === 0) {
         toast.info("Scan complete — no new recurring charges found.");
       } else {
@@ -216,7 +219,8 @@ function BankCard({ user }: { user: User }) {
 
 function GmailCard({ user }: { user: User }) {
   const [status, setStatus] = useState<GmailStatus | null>(null);
-  const [busy, setBusy] = useState<"connect" | "scan" | "disconnect" | null>(null);
+  const [busy, setBusy] = useState<"connect" | "scan" | null>(null);
+  const [removing, setRemoving] = useState<string | null>(null);
   const [unavailable, setUnavailable] = useState(false);
 
   const refresh = () =>
@@ -246,14 +250,27 @@ function GmailCard({ user }: { user: User }) {
   const scan = async () => {
     setBusy("scan");
     try {
-      const { demo, items } = await api.gmailScan();
-      const stored = await storeDetectedCandidates(user.uid, items, demo ? "demo" : "gmail");
-      if (stored === 0) {
+      const { demo, items, accounts } = await api.gmailScan();
+      const { stored, priceChanges } = await storeDetectedCandidates(
+        user.uid,
+        items,
+        demo ? "demo" : "gmail",
+      );
+      if (stored === 0 && priceChanges.length === 0) {
         toast.info("Scan complete — no new recurring charges found.");
-      } else {
+      } else if (stored > 0) {
         toast.success(
           `Scan complete — found ${stored} possible subscription${stored > 1 ? "s" : ""}. Review them on the dashboard.${demo ? " (sample data)" : ""}`,
         );
+      }
+      if (priceChanges.length > 0) {
+        toast.info(
+          `${priceChanges.length} price change${priceChanges.length > 1 ? "s" : ""} spotted — review on the dashboard.`,
+        );
+      }
+      // A failed inbox never blocks the others — but the user should know.
+      for (const a of accounts ?? []) {
+        if (!a.ok) toast.warning(`${a.address}: ${a.error ?? "scan failed"}`);
       }
       await refresh();
     } catch (err) {
@@ -263,24 +280,26 @@ function GmailCard({ user }: { user: User }) {
     }
   };
 
-  const disconnect = async () => {
-    setBusy("disconnect");
+  const disconnectAccount = async (address: string) => {
+    setRemoving(address);
     try {
-      await api.gmailDisconnect();
-      toast.success("Gmail disconnected.");
+      await api.gmailDisconnect(address);
+      toast.success(`${address} disconnected.`);
       await refresh();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to disconnect");
     } finally {
-      setBusy(null);
+      setRemoving(null);
     }
   };
+
+  const accounts = status?.accounts ?? [];
 
   return (
     <Card
       icon={Mail}
       title="Gmail subscription detection"
-      desc="Renewly reads your bank alerts and payment receipts (read-only) to find recurring charges. For Indian banks — HDFC, ICICI, SBI and the rest — this is your real transaction feed."
+      desc="Renewly reads your bank alerts and payment receipts (read-only) to find recurring charges. Link every Gmail you use — subscriptions from all your inboxes land in one place. For Indian banks — HDFC, ICICI, SBI and the rest — this is your real transaction feed."
     >
       {unavailable ? (
         <p className="rounded-xl border border-border/60 bg-surface/60 px-4 py-3 text-sm text-muted-foreground">
@@ -290,51 +309,90 @@ function GmailCard({ user }: { user: User }) {
         <ConnectionStatusSkeleton />
       ) : (
         <div className="space-y-4">
-          <div className="flex items-center justify-between rounded-xl border border-border/60 bg-surface/60 px-4 py-3">
-            <div className="flex items-center gap-3">
-              {status.connected ? (
-                <CheckCircle2 className="h-4 w-4 text-primary" />
-              ) : status.demo ? (
-                <FlaskConical className="h-4 w-4 text-accent" />
+          {accounts.length === 0 ? (
+            <div className="flex items-center gap-3 rounded-xl border border-border/60 bg-surface/60 px-4 py-3">
+              {status.demo ? (
+                <FlaskConical className="h-4 w-4 shrink-0 text-accent" />
               ) : (
-                <Unplug className="h-4 w-4 text-muted-foreground" />
+                <Unplug className="h-4 w-4 shrink-0 text-muted-foreground" />
               )}
               <div>
-                <p className="text-sm font-medium">
-                  {status.connected
-                    ? `Connected${status.address ? ` — ${status.address}` : ""}`
-                    : status.demo
-                      ? "Demo mode"
-                      : "Not connected"}
-                </p>
+                <p className="text-sm font-medium">{status.demo ? "Demo mode" : "Not connected"}</p>
                 <p className="text-xs text-muted-foreground">
-                  {status.connected && status.lastScanAt
-                    ? `Last scan ${new Date(status.lastScanAt).toLocaleString("en-IN")}`
-                    : status.demo
-                      ? "Server has no Google OAuth credentials — scans return realistic sample data."
-                      : "Connect to scan your inbox for subscriptions."}
+                  {status.demo
+                    ? "Server has no Google OAuth credentials — scans return realistic sample data."
+                    : "Connect to scan your inbox for subscriptions."}
                 </p>
               </div>
             </div>
-          </div>
+          ) : (
+            <div className="space-y-2">
+              {accounts.map((a) => (
+                <div
+                  key={a.address}
+                  className="flex items-center justify-between gap-3 rounded-xl border border-border/60 bg-surface/60 px-4 py-3"
+                >
+                  <div className="flex min-w-0 items-center gap-3">
+                    {a.needsReauth ? (
+                      <AlertTriangle className="h-4 w-4 shrink-0 text-accent" />
+                    ) : (
+                      <CheckCircle2 className="h-4 w-4 shrink-0 text-primary" />
+                    )}
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">{a.address}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {a.needsReauth
+                          ? "Access expired — reconnect this account"
+                          : a.lastScanAt
+                            ? `Last scan ${new Date(a.lastScanAt).toLocaleString("en-IN")}`
+                            : "Not scanned yet"}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    {a.needsReauth && (
+                      <button
+                        onClick={connect}
+                        className="rounded-full border border-accent/40 bg-accent/10 px-3 py-1.5 text-xs font-medium text-accent transition-colors hover:bg-accent/20"
+                      >
+                        Reconnect
+                      </button>
+                    )}
+                    <button
+                      aria-label={`Disconnect ${a.address}`}
+                      onClick={() => disconnectAccount(a.address)}
+                      disabled={removing === a.address}
+                      className="flex h-8 w-8 items-center justify-center rounded-full border border-border/60 text-muted-foreground transition-colors hover:border-destructive/50 hover:bg-destructive/10 hover:text-destructive disabled:opacity-60"
+                    >
+                      {removing === a.address ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Unplug className="h-3.5 w-3.5" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
 
           <div className="flex flex-wrap gap-3">
-            {!status.connected && (
+            {accounts.length === 0 && (
               <PrimaryBtn onClick={connect} busy={busy === "connect"}>
                 <Mail className="h-4 w-4" />
                 {status.demo ? "Try demo connection" : "Connect Gmail"}
               </PrimaryBtn>
             )}
-            {(status.connected || status.demo) && (
+            {(accounts.length > 0 || status.demo) && (
               <PrimaryBtn onClick={scan} busy={busy === "scan"}>
                 <ScanSearch className="h-4 w-4" />
-                Scan now
+                {accounts.length > 1 ? "Scan all inboxes" : "Scan now"}
               </PrimaryBtn>
             )}
-            {status.connected && (
-              <GhostBtn onClick={disconnect} busy={busy === "disconnect"}>
-                <Unplug className="h-4 w-4" />
-                Disconnect
+            {accounts.length > 0 && !status.demo && (
+              <GhostBtn onClick={connect} busy={busy === "connect"}>
+                <Plus className="h-4 w-4" />
+                Add another Gmail
               </GhostBtn>
             )}
           </div>
@@ -346,12 +404,27 @@ function GmailCard({ user }: { user: User }) {
 
 // ---------- Reminders ----------
 
-function ReminderCard({ uid, reminderDays }: { uid: string; reminderDays: number }) {
+function ReminderCard({
+  uid, reminderDays, autoScan,
+}: { uid: string; reminderDays: number; autoScan: boolean }) {
   const [days, setDays] = useState(reminderDays);
   const [saving, setSaving] = useState(false);
   const [sending, setSending] = useState(false);
 
   useEffect(() => setDays(reminderDays), [reminderDays]);
+
+  const toggleAutoScan = async (value: boolean) => {
+    try {
+      await saveUserSettings(uid, { autoScan: value });
+      toast.success(
+        value
+          ? "Weekly auto-scan is on — we'll email you anything new."
+          : "Weekly auto-scan turned off.",
+      );
+    } catch {
+      toast.error("Couldn't save preference.");
+    }
+  };
 
   const save = async (value: number) => {
     setDays(value);
@@ -409,6 +482,21 @@ function ReminderCard({ uid, reminderDays }: { uid: string; reminderDays: number
               </button>
             ))}
           </div>
+        </div>
+
+        <div className="flex items-center justify-between rounded-xl border border-border/60 bg-surface/60 px-4 py-3">
+          <div className="pr-4">
+            <p className="text-sm font-medium">Weekly auto-scan digest</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              Renewly re-scans your linked Gmail in the background and emails you when it
+              finds a new subscription — no button-pressing required.
+            </p>
+          </div>
+          <Switch
+            defaultChecked={autoScan}
+            onCheckedChange={toggleAutoScan}
+            aria-label="Toggle weekly auto-scan digest"
+          />
         </div>
 
         <GhostBtn onClick={sendTest} busy={sending}>

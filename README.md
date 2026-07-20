@@ -12,7 +12,7 @@
 ![Firebase](https://img.shields.io/badge/Firebase-Auth%20%2B%20Firestore-FFCA28?logo=firebase&logoColor=white&labelColor=20232a)
 ![Express](https://img.shields.io/badge/Express-API-000000?logo=express&logoColor=white&labelColor=20232a)
 ![Plaid](https://img.shields.io/badge/Plaid-Bank%20linking-111111?labelColor=20232a)
-![Tests](https://img.shields.io/badge/tests-69%20passing-brightgreen?labelColor=20232a)
+![Tests](https://img.shields.io/badge/tests-113%20passing-brightgreen?labelColor=20232a)
 
 </div>
 
@@ -28,12 +28,15 @@ Subscriptions are designed to be forgotten. The ₹199 here, the ₹1,950 there,
 
 ## How detection works
 
-**📬 Gmail scanning is the real-data path.** Indian banks — HDFC, ICICI, SBI and the rest — email you for every debit, autopay, and mandate. Renewly connects to Gmail with **read-only OAuth**, scans your bank alerts and payment receipts, and reconstructs your recurring charges from the paper trail:
+**📬 Gmail scanning is the real-data path.** Indian banks — HDFC, ICICI, SBI and the rest — email you for every debit, autopay, and mandate. Renewly connects to Gmail with **read-only OAuth** — link *every* Gmail address you use, and subscriptions from all your inboxes land in one place — then scans your bank alerts and payment receipts and reconstructs your recurring charges from the paper trail:
 
 - Extracts merchant + amount from alert emails (full MIME parsing, HTML stripping, URL noise removal)
 - Filters out marketing mail by header analysis (`List-Unsubscribe`, `Precedence: bulk`) so a "Netflix from ₹149!" promo never becomes a "subscription"
 - Infers billing cycles from payment intervals (monthly ≈ 25–35 days, yearly ≈ 350–380 days)
+- Merges the same service found in several inboxes into one row (tagged with every source address)
 - Proposes candidates with evidence and a confidence score — you approve or dismiss each one
+- **Re-scans weekly in the background** (incremental — only new mail since last time) and emails a digest when it finds something; one toggle in Settings turns it off
+- **Spots price changes**: if your inbox shows Netflix billing ₹799 while you track ₹649, the dashboard flags it — the tracked amount only changes with your permission
 
 **🏦 Plaid bank linking (international demo).** The same bank-hosted login flow used by Mint and Rocket Money, wired to Plaid's ML-based recurring-transaction detection. Runs on Plaid Sandbox test banks — Plaid doesn't cover India (India uses the RBI Account Aggregator network instead; see [Roadmap](#-roadmap)). Your bank credentials never touch the server: Plaid talks to the bank, the app only receives a token.
 
@@ -44,6 +47,8 @@ Both scanners land candidates in **one review queue**, tagged by source. No keys
 ## ✨ Everything else
 
 - **Dashboard** — monthly/yearly spend, category breakdown chart, upcoming renewals, realtime sync via Firestore `onSnapshot`.
+- **Renewal calendar** — a month grid of every upcoming charge, plus **one-click export to Google Calendar** (a standards-compliant `.ics` with recurring events).
+- **Cancellation guide** — a ✂️ on every subscription opens curated cancel steps and a direct link for 14+ services (Netflix, Spotify, Google One, JioHotstar, Adobe's termination-fee gotcha…), including the India-specific tip most people miss: revoke the UPI Autopay mandate too.
 - **Email reminders** — a daily job (08:00 IST cron + an external-trigger endpoint) emails a digest N days before each renewal; you pick N in Settings. Overdue dates roll forward automatically.
 - **"Till date"** — set an end date on any subscription; when the final cycle completes, Renewly asks permission before retiring it (keep tracking or remove).
 - **Auth done right** — email/password + Google sign-in, forgot-password flow, password visibility toggle, per-user Firestore security rules.
@@ -248,7 +253,7 @@ Deploying `firestore:rules` alongside hosting replaces any permissive test-mode 
 
 ## 🗺 Roadmap
 
-- **Multiple Gmail accounts per Renewly account** — link several inboxes, track everything together, with per-account breakdowns and charts.
+- **Per-inbox spending graphs** — multiple Gmail accounts already link and scan together; next, break the charts down by which inbox each charge came from.
 - **Setu Account Aggregator** — India-native bank linking through the RBI-regulated AA network (free sandbox), making bank scanning real for Indian accounts the way Plaid does internationally.
 - **AI extraction by default** — promote the Claude second pass from optional to standard once the project has an API budget.
 
