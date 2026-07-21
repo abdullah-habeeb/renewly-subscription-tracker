@@ -129,8 +129,8 @@ Every constraint below is a deliberate tradeoff, not an oversight, and each one 
 Prerequisites: **Node 20+** and **npm**.
 
 ```bash
-git clone https://github.com/abdullah-habeeb/money-guardian-dash.git
-cd money-guardian-dash
+git clone https://github.com/abdullah-habeeb/renewly-subscription-tracker.git
+cd renewly-subscription-tracker
 
 # Terminal 1 — backend on :5000
 cd backend && npm install && npm run dev
