@@ -265,13 +265,14 @@ function GmailCard({ user }: { user: User }) {
   const scan = async () => {
     setBusy("scan");
     try {
-      const { demo, items, accounts } = await api.gmailScan();
-      const { stored, priceChanges } = await storeDetectedCandidates(
+      const { demo, items, accounts, cancellations } = await api.gmailScan();
+      const { stored, priceChanges, cancellations: cancellationMatches } = await storeDetectedCandidates(
         user.uid,
         items,
         demo ? "demo" : "gmail",
+        cancellations ?? [],
       );
-      if (stored === 0 && priceChanges.length === 0) {
+      if (stored === 0 && priceChanges.length === 0 && cancellationMatches.length === 0) {
         toast.info("Scan complete — no new recurring charges found.");
       } else if (stored > 0) {
         toast.success(
@@ -281,6 +282,11 @@ function GmailCard({ user }: { user: User }) {
       if (priceChanges.length > 0) {
         toast.info(
           `${priceChanges.length} price change${priceChanges.length > 1 ? "s" : ""} spotted — review on the dashboard.`,
+        );
+      }
+      if (cancellationMatches.length > 0) {
+        toast.info(
+          `${cancellationMatches.length} possible cancellation${cancellationMatches.length > 1 ? "s" : ""} spotted — review on the dashboard.`,
         );
       }
       // A failed inbox never blocks the others — but the user should know.

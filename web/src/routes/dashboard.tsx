@@ -3,7 +3,7 @@ import { useMemo, useState, type ReactNode } from "react";
 import type { User } from "firebase/auth";
 import {
   Plus, Pencil, Trash2, CalendarClock, Wallet, Layers, Bell,
-  Inbox, Sparkles, Check, X, Loader2, Mail, Landmark, CalendarOff, Scissors, TrendingUp,
+  Inbox, Sparkles, Check, X, Loader2, Mail, Landmark, CalendarOff, Scissors, TrendingUp, Ban,
 } from "lucide-react";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as ChartTooltip } from "recharts";
 import { toast } from "sonner";
@@ -25,12 +25,15 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useCountUp } from "@/hooks/useCountUp";
 import {
+  acceptCancellation,
   acceptPriceChange,
   approveDetected,
   clearEndDate,
   deleteSubscription,
+  dismissCancellation,
   dismissDetected,
   dismissPriceChange,
+  markCancelledManually,
   markDetectedApproved,
   useDetected,
   useSubscriptions,
@@ -40,6 +43,7 @@ import {
   formatDueDate,
   inr,
   inrExact,
+  isCancelled,
   isEnded,
   monthlyCost,
   yearlyCost,
@@ -73,16 +77,24 @@ function Dashboard({ user }: { user: User }) {
 
   // Subscriptions past their till date drop out of every money figure and
   // move to a "these ended" prompt — they're only removed with permission.
+  // Cancelled subscriptions drop out too, but never appear in a dashboard
+  // prompt to "remove" them — they're a permanent, visible part of the
+  // history log at /history instead.
   const { activeSubs, endedSubs } = useMemo(
     () => ({
-      activeSubs: subs.filter((s) => !isEnded(s)),
-      endedSubs: subs.filter((s) => isEnded(s)),
+      activeSubs: subs.filter((s) => !isEnded(s) && !isCancelled(s)),
+      endedSubs: subs.filter((s) => !isCancelled(s) && isEnded(s)),
     }),
     [subs],
   );
 
   const priceChanged = useMemo(
     () => activeSubs.filter((s) => s.pendingPriceChange),
+    [activeSubs],
+  );
+
+  const cancelling = useMemo(
+    () => activeSubs.filter((s) => s.pendingCancellation),
     [activeSubs],
   );
 
@@ -147,6 +159,9 @@ function Dashboard({ user }: { user: User }) {
 
       {/* Price changes spotted by scans — amounts only change with permission */}
       {priceChanged.length > 0 && <PriceChangePanel items={priceChanged} />}
+
+      {/* Cancellations spotted by scans — status only changes with permission */}
+      {cancelling.length > 0 && <CancellationPanel items={cancelling} />}
 
       {/* Ended subscriptions prompt (till date passed — remove only with permission) */}
       {endedSubs.length > 0 && <EndedPanel items={endedSubs} />}
@@ -412,6 +427,19 @@ function SubscriptionRow({
     }
   };
 
+  // For cancellations Gmail can't see at all — an app-store subscription
+  // with no email trail, or one cancelled before this feature existed. The
+  // record stays in the history log rather than vanishing like Delete does.
+  const onMarkCancelled = async () => {
+    try {
+      await markCancelledManually(sub.id);
+      toast.success(`${sub.name} marked as cancelled`);
+    } catch (err) {
+      console.error(err);
+      toast.error("Couldn't update. Try again.");
+    }
+  };
+
   return (
     <li
       className="group flex animate-fade-slide-up items-center gap-4 py-3.5"
@@ -453,6 +481,35 @@ function SubscriptionRow({
             <TooltipTrigger asChild>
               <AlertDialogTrigger asChild>
                 <button
+                  aria-label="Mark as cancelled"
+                  className="flex h-9 w-9 items-center justify-center rounded-full border border-border/60 text-muted-foreground transition-colors hover:border-accent/50 hover:bg-accent/10 hover:text-accent"
+                >
+                  <Ban className="h-3.5 w-3.5" />
+                </button>
+              </AlertDialogTrigger>
+            </TooltipTrigger>
+            <TooltipContent>Mark as cancelled</TooltipContent>
+          </Tooltip>
+          <AlertDialogContent className="border-border/60 bg-card-gradient backdrop-blur-xl">
+            <AlertDialogHeader>
+              <AlertDialogTitle>Mark {sub.name} as cancelled?</AlertDialogTitle>
+              <AlertDialogDescription>
+                It stops counting toward your totals and reminders, but stays in your history —
+                you can reactivate it any time from there.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={onMarkCancelled}>Mark as cancelled</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        <AlertDialog>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <AlertDialogTrigger asChild>
+                <button
                   aria-label="Delete"
                   className="flex h-9 w-9 items-center justify-center rounded-full border border-border/60 text-muted-foreground transition-colors hover:border-destructive/50 hover:bg-destructive/10 hover:text-destructive"
                 >
@@ -466,7 +523,8 @@ function SubscriptionRow({
             <AlertDialogHeader>
               <AlertDialogTitle>Delete {sub.name}?</AlertDialogTitle>
               <AlertDialogDescription>
-                This can't be undone. You'll stop getting renewal reminders for it.
+                This can't be undone, and it won't appear in your history — for a subscription you
+                cancelled and want on record, use "Mark as cancelled" instead.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -529,7 +587,7 @@ const SOURCE_META: Record<string, { icon: typeof Mail; label: string }> = {
   demo: { icon: Sparkles, label: "demo" },
 };
 
-function SourceBadge({ source, accounts }: { source?: string; accounts?: string[] }) {
+export function SourceBadge({ source, accounts }: { source?: string; accounts?: string[] }) {
   const meta = source ? SOURCE_META[source] : undefined;
   if (!meta) return null;
   const Icon = meta.icon;
@@ -726,6 +784,73 @@ function PriceChangePanel({ items }: { items: Subscription[] }) {
             </li>
           );
         })}
+      </ul>
+    </section>
+  );
+}
+
+function CancellationPanel({ items }: { items: Subscription[] }) {
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const act = async (sub: Subscription, accept: boolean) => {
+    setBusy(sub.id);
+    try {
+      if (accept) {
+        await acceptCancellation(sub);
+        toast.success(`${sub.name} marked as cancelled`);
+      } else {
+        await dismissCancellation(sub);
+        toast.success(`Keeping ${sub.name} — still tracking it`);
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("Action failed. Try again.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <section className="rounded-3xl border border-accent/30 bg-accent/5 p-6 backdrop-blur-xl">
+      <div className="flex items-center gap-2">
+        <Ban className="h-4 w-4 text-accent" />
+        <h2 className="font-display text-xl tracking-tight">
+          {items.length === 1 ? "A cancellation was spotted" : `${items.length} cancellations were spotted`}
+        </h2>
+      </div>
+      <p className="mt-1 text-sm text-muted-foreground">
+        Your inbox shows a cancellation confirmation for these. Confirm to stop tracking them, or
+        keep them if you're still subscribed.
+      </p>
+      <ul className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {items.map((sub) => (
+          <li key={sub.id} className="rounded-2xl border border-border/60 bg-surface/60 p-4">
+            <p className="truncate font-medium">{sub.name}</p>
+            <p className="text-xs text-muted-foreground tabular-nums">
+              {inrExact.format(sub.amount)} · {sub.billingCycle}
+            </p>
+            <p className="mt-1 line-clamp-2 text-[11px] text-muted-foreground/70">
+              {sub.pendingCancellation!.evidence}
+            </p>
+            <div className="mt-3 flex gap-2">
+              <button
+                onClick={() => act(sub, true)}
+                disabled={busy === sub.id}
+                className="flex flex-1 items-center justify-center gap-1.5 rounded-full bg-gradient-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground disabled:opacity-60"
+              >
+                {busy === sub.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Ban className="h-3 w-3" />}
+                Yes, cancelled
+              </button>
+              <button
+                onClick={() => act(sub, false)}
+                disabled={busy === sub.id}
+                className="flex items-center justify-center gap-1.5 rounded-full border border-border/60 px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground disabled:opacity-60"
+              >
+                <X className="h-3 w-3" /> Still subscribed
+              </button>
+            </div>
+          </li>
+        ))}
       </ul>
     </section>
   );

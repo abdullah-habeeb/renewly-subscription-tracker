@@ -15,7 +15,14 @@ import {
 } from "firebase/firestore";
 import type { User } from "firebase/auth";
 import { db } from "./firebase";
-import { detectPriceChanges, planDedupe, type PriceChange } from "./dedupe";
+import {
+  detectPriceChanges,
+  matchCancellations,
+  planDedupe,
+  type CancellationMatch,
+  type PriceChange,
+  type ScannedCancellation,
+} from "./dedupe";
 import {
   calculateNextDueDate,
   type BillingCycle,
@@ -136,7 +143,8 @@ export async function storeDetectedCandidates(
   uid: string,
   items: Array<Omit<DetectedSubscription, "id" | "uid" | "status" | "source">>,
   source: "gmail" | "plaid" | "demo",
-): Promise<{ stored: number; priceChanges: PriceChange[] }> {
+  cancellations: ScannedCancellation[] = [],
+): Promise<{ stored: number; priceChanges: PriceChange[]; cancellations: CancellationMatch[] }> {
   const [subsSnap, detectedSnap] = await Promise.all([
     getDocs(query(collection(db, "subscriptions"), where("uid", "==", uid))),
     getDocs(query(collection(db, "detected"), where("uid", "==", uid))),
@@ -198,7 +206,34 @@ export async function storeDetectedCandidates(
     );
   }
 
-  return { stored, priceChanges };
+  // Cancellations only from real scans, same reasoning as price changes —
+  // demo data must never claim a real subscription was cancelled.
+  let cancellationMatches: CancellationMatch[] = [];
+  if (source !== "demo" && cancellations.length > 0) {
+    const trackedForCancellation = subsSnap.docs.map((d) => ({
+      id: d.id,
+      name: d.data().name as string,
+      status: d.data().status as string | undefined,
+      dismissedCancellationDate: (d.data().dismissedCancellationDate as string | null) ?? null,
+    }));
+    cancellationMatches = matchCancellations(trackedForCancellation, cancellations).filter((m) => {
+      const sub = trackedForCancellation.find((t) => t.id === m.subscriptionId);
+      return sub?.dismissedCancellationDate !== m.detectedAt;
+    });
+    await Promise.all(
+      cancellationMatches.map((m) =>
+        updateDoc(doc(db, "subscriptions", m.subscriptionId), {
+          pendingCancellation: {
+            detectedAt: m.detectedAt,
+            evidence: m.evidence,
+            sourceAccounts: m.sourceAccounts ?? [],
+          },
+        }),
+      ),
+    );
+  }
+
+  return { stored, priceChanges, cancellations: cancellationMatches };
 }
 
 /** User accepted the flagged price: the tracked amount catches up. */
@@ -215,6 +250,48 @@ export function dismissPriceChange(sub: Subscription) {
   return updateDoc(doc(db, "subscriptions", sub.id), {
     pendingPriceChange: null,
     dismissedPriceAmount: sub.pendingPriceChange?.newAmount ?? null,
+  });
+}
+
+/** User confirmed a Gmail-detected cancellation: subscription moves to cancelled. */
+export function acceptCancellation(sub: Subscription) {
+  return updateDoc(doc(db, "subscriptions", sub.id), {
+    status: "cancelled",
+    cancelledAt: sub.pendingCancellation?.detectedAt ?? new Date().toISOString().split("T")[0],
+    cancellationSource: "gmail",
+    cancellationEvidence: sub.pendingCancellation?.evidence ?? null,
+    pendingCancellation: null,
+    dismissedCancellationDate: null,
+  });
+}
+
+/** User says they're still subscribed; don't re-flag this same detected date. */
+export function dismissCancellation(sub: Subscription) {
+  return updateDoc(doc(db, "subscriptions", sub.id), {
+    pendingCancellation: null,
+    dismissedCancellationDate: sub.pendingCancellation?.detectedAt ?? null,
+  });
+}
+
+/** Manually mark a subscription cancelled — for cancellations Gmail can't see (app-store, no receipt). */
+export function markCancelledManually(id: string) {
+  return updateDoc(doc(db, "subscriptions", id), {
+    status: "cancelled",
+    cancelledAt: new Date().toISOString().split("T")[0],
+    cancellationSource: "manual",
+    cancellationEvidence: null,
+    pendingCancellation: null,
+  });
+}
+
+/** Undo a cancellation — resubscribed, or marked by mistake. */
+export function reactivateSubscription(id: string) {
+  return updateDoc(doc(db, "subscriptions", id), {
+    status: "active",
+    cancelledAt: null,
+    cancellationSource: null,
+    cancellationEvidence: null,
+    dismissedCancellationDate: null,
   });
 }
 

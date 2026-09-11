@@ -175,6 +175,26 @@ function demoDetections() {
   }));
 }
 
+/**
+ * Realistic sample cancellation used when no Google OAuth credentials are
+ * configured. Matches the "Spotify" entry in demoDetections() by name, so a
+ * user who approves that candidate and scans again sees the full detect →
+ * approve → cancel loop, not just half of it.
+ */
+function demoCancellations() {
+  const today = new Date();
+  const d = new Date(today);
+  d.setDate(d.getDate() - 2);
+  return [
+    {
+      name: 'Spotify',
+      category: 'Music',
+      date: toLocalISO(d),
+      subject: 'Your Spotify Premium cancellation is confirmed',
+    },
+  ];
+}
+
 /** Realistic sample data used when no Plaid credentials are configured. */
 function bankDemoDetections() {
   const today = new Date();
@@ -198,5 +218,5 @@ function bankDemoDetections() {
 }
 
 module.exports = {
-  detectRecurring, extractAmount, identifyMerchant, demoDetections, bankDemoDetections, addCycle,
+  detectRecurring, extractAmount, identifyMerchant, demoDetections, demoCancellations, bankDemoDetections, addCycle,
 };

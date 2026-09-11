@@ -8,8 +8,8 @@ const { admin, db, hasFirestore } = require('../firebase');
  *  - real scans delete demo leftovers and never dedupe against them;
  *  - real-sourced detected docs (any status, incl. dismissed) block re-offering.
  */
-async function storeCandidates(uid, items, source) {
-  if (!hasFirestore) return { stored: 0, storedItems: [] };
+async function storeCandidates(uid, items, source, cancellations = []) {
+  if (!hasFirestore) return { stored: 0, storedItems: [], priceChanges: 0, cancellationsFlagged: 0 };
 
   const [subsSnap, detectedSnap] = await Promise.all([
     db.collection('subscriptions').where('uid', '==', uid).get(),
@@ -76,7 +76,32 @@ async function storeCandidates(uid, items, source) {
     }
   }
 
-  return { stored: storedItems.length, storedItems, priceChanges };
+  // Mirror of the client's cancellation matching (web/src/lib/dedupe.ts):
+  // a cancellation-confirmation email matching a tracked, still-active
+  // subscription proposes marking it cancelled — never applied automatically.
+  let cancellationsFlagged = 0;
+  if (isRealScan && cancellations.length > 0) {
+    const byName = new Map(
+      subsSnap.docs.map((d) => [String(d.data().name || '').toLowerCase(), d]),
+    );
+    for (const c of cancellations) {
+      const subDoc = byName.get(c.name.toLowerCase());
+      if (!subDoc) continue;
+      const sub = subDoc.data();
+      if (sub.status === 'cancelled') continue;
+      if (sub.dismissedCancellationDate === c.date) continue;
+      await subDoc.ref.update({
+        pendingCancellation: {
+          detectedAt: c.date,
+          evidence: c.subject,
+          sourceAccounts: c.sourceAccounts || [],
+        },
+      });
+      cancellationsFlagged++;
+    }
+  }
+
+  return { stored: storedItems.length, storedItems, priceChanges, cancellationsFlagged };
 }
 
 module.exports = { storeCandidates };

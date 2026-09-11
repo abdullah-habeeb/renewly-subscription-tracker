@@ -12,11 +12,11 @@ export default defineConfig({
     tailwindcss(),
   ],
   server: {
-    port: 3000,
+    port: Number(process.env.PORT) || 3000,
     proxy: {
       // Express backend (Gmail scanning, reminders)
       "/api": {
-        target: "http://localhost:5000",
+        target: `http://localhost:${process.env.BACKEND_PORT || 5000}`,
         changeOrigin: true,
       },
     },

@@ -1,5 +1,6 @@
 const {
-  extractBodyText, isBulkMail, isNonChargeNotice, mergeAccountCandidates, scanLookbackDays,
+  extractBodyText, isBulkMail, isNonChargeNotice, isCancellationNotice,
+  mergeAccountCandidates, mergeCancellations, scanLookbackDays,
 } = require('./gmail');
 const { extractAmount } = require('./detector');
 
@@ -238,5 +239,76 @@ describe('scanLookbackDays', () => {
 
   test('an unparseable timestamp falls back to the full window', () => {
     expect(scanLookbackDays('not-a-date', now)).toBe(180);
+  });
+});
+
+describe('isCancellationNotice', () => {
+  test('flags a confirmed cancellation', () => {
+    expect(isCancellationNotice('Your Netflix membership has been cancelled.')).toBe(true);
+  });
+
+  test('flags "successfully cancelled" phrasing', () => {
+    expect(isCancellationNotice('Spotify Premium: your subscription was successfully cancelled.')).toBe(true);
+  });
+
+  test('flags an unsubscribe confirmation', () => {
+    expect(isCancellationNotice("You've successfully unsubscribed from Audible Premium Plus.")).toBe(true);
+  });
+
+  test('flags "no longer be charged"', () => {
+    expect(isCancellationNotice('This confirms your plan is cancelled. You will no longer be charged.')).toBe(true);
+  });
+
+  test('flags "sorry to see you go"', () => {
+    expect(isCancellationNotice("We're sorry to see you go — your Adobe Creative Cloud plan has ended.")).toBe(true);
+  });
+
+  // The exact phrase isNonChargeNotice uses to *exclude* a still-active
+  // subscription from the charge path must not trip the opposite detector —
+  // "will be cancelled" describes a future/pending state, not a completed one.
+  test('does not flag a still-pending "will be cancelled" warning', () => {
+    const text = 'Your subscription will be cancelled at the end of the billing period unless you update your payment method.';
+    expect(isCancellationNotice(text)).toBe(false);
+  });
+
+  test('does not flag an ordinary payment receipt', () => {
+    expect(isCancellationNotice('Your Netflix payment of ₹649 was successful. Thanks for being a member.')).toBe(false);
+  });
+
+  test('does not flag a trial-ending reminder', () => {
+    expect(isCancellationNotice('Your trial for Google One will end on 17 Jul 2026.')).toBe(false);
+  });
+});
+
+describe('mergeCancellations', () => {
+  const cancellation = (name, date, account) => ({
+    name, category: 'Music', date, subject: 'Cancellation confirmed', sourceAccounts: [account],
+  });
+
+  test('keeps cancellations for distinct merchants', () => {
+    const merged = mergeCancellations([
+      cancellation('Spotify', '2026-07-01', 'a@gmail.com'),
+      cancellation('Netflix', '2026-07-02', 'a@gmail.com'),
+    ]);
+    expect(merged).toHaveLength(2);
+  });
+
+  test('merges the same merchant cancelled per two inboxes, keeping the later date', () => {
+    const merged = mergeCancellations([
+      cancellation('Spotify', '2026-07-01', 'a@gmail.com'),
+      cancellation('spotify', '2026-07-05', 'b@gmail.com'),
+    ]);
+    expect(merged).toHaveLength(1);
+    expect(merged[0].date).toBe('2026-07-05');
+    expect(merged[0].sourceAccounts.sort()).toEqual(['a@gmail.com', 'b@gmail.com']);
+  });
+
+  test('the later date wins regardless of input order', () => {
+    const early = cancellation('Netflix', '2026-06-01', 'a@gmail.com');
+    const late = cancellation('Netflix', '2026-07-15', 'b@gmail.com');
+    for (const order of [[early, late], [late, early]]) {
+      const merged = mergeCancellations(order);
+      expect(merged[0].date).toBe('2026-07-15');
+    }
   });
 });

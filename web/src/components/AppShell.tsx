@@ -1,5 +1,5 @@
 import { Link, useNavigate } from "@tanstack/react-router";
-import { CalendarDays, LayoutDashboard, Settings, LogOut, Sparkles, Loader2 } from "lucide-react";
+import { CalendarDays, History, LayoutDashboard, Settings, LogOut, Sparkles, Loader2 } from "lucide-react";
 import { useEffect, type ReactNode } from "react";
 import type { User } from "firebase/auth";
 import { useAuth, logout } from "@/hooks/useAuth";
@@ -41,6 +41,7 @@ export function AppShell({ children }: { children: (user: User) => ReactNode }) 
           <nav className="flex items-center gap-1">
             <NavLink to="/dashboard" icon={LayoutDashboard} label="Dashboard" />
             <NavLink to="/calendar" icon={CalendarDays} label="Calendar" />
+            <NavLink to="/history" icon={History} label="History" />
             <NavLink to="/settings" icon={Settings} label="Settings" />
             <div className="mx-3 hidden h-5 w-px bg-border sm:block" />
             <span className="mr-2 hidden max-w-48 truncate text-xs text-muted-foreground sm:block">

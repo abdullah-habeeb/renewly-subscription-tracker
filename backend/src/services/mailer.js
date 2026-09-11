@@ -95,7 +95,7 @@ function renewsWhen(dateStr) {
   return `in ${days} days`;
 }
 
-function renderDigestHtml(items, dashboardUrl) {
+function renderDigestHtml(items, dashboardUrl, cancellationsFlagged) {
   const rows = items
     .map(
       (s) => `
@@ -107,15 +107,12 @@ function renderDigestHtml(items, dashboardUrl) {
     )
     .join('');
 
-  return `
-  <div style="background:#0d1f18;padding:32px 16px;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#eef5f0;">
-    <div style="max-width:560px;margin:0 auto;background:#14291f;border:1px solid #2e4a3f;border-radius:20px;overflow:hidden;">
-      <div style="padding:28px 28px 0;">
-        <p style="margin:0;font-size:13px;letter-spacing:1px;color:#7fd6a4;text-transform:uppercase;">Renewly · Inbox watch</p>
-        <h1 style="margin:12px 0 4px;font-size:24px;font-weight:600;">We spotted ${items.length === 1 ? 'a new subscription' : `${items.length} new subscriptions`} in your inbox.</h1>
-        <p style="margin:0 0 20px;font-size:14px;color:#a9c2b4;">Renewly re-scans your linked Gmail weekly. These recurring charges are new since last time — review them so nothing slips by.</p>
-      </div>
-      <table style="width:100%;border-collapse:collapse;font-size:14px;color:#eef5f0;">
+  const headline = items.length > 0
+    ? `We spotted ${items.length === 1 ? 'a new subscription' : `${items.length} new subscriptions`} in your inbox.`
+    : `We spotted ${cancellationsFlagged === 1 ? 'a cancellation' : `${cancellationsFlagged} cancellations`} in your inbox.`;
+
+  const table = items.length > 0
+    ? `<table style="width:100%;border-collapse:collapse;font-size:14px;color:#eef5f0;">
         <thead>
           <tr style="text-align:left;color:#7fd6a4;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;">
             <th style="padding:8px 16px;">Service</th>
@@ -124,7 +121,23 @@ function renderDigestHtml(items, dashboardUrl) {
           </tr>
         </thead>
         <tbody>${rows}</tbody>
-      </table>
+      </table>`
+    : '';
+
+  const cancellationNote = cancellationsFlagged > 0
+    ? `<p style="margin:${items.length > 0 ? '16px' : '0'} 28px 0;font-size:13px;color:#e0b25c;padding:0 28px;">Also: ${cancellationsFlagged} tracked subscription${cancellationsFlagged === 1 ? '' : 's'} may have been cancelled — review and confirm on your dashboard before it's removed from your totals.</p>`
+    : '';
+
+  return `
+  <div style="background:#0d1f18;padding:32px 16px;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#eef5f0;">
+    <div style="max-width:560px;margin:0 auto;background:#14291f;border:1px solid #2e4a3f;border-radius:20px;overflow:hidden;">
+      <div style="padding:28px 28px 0;">
+        <p style="margin:0;font-size:13px;letter-spacing:1px;color:#7fd6a4;text-transform:uppercase;">Renewly · Inbox watch</p>
+        <h1 style="margin:12px 0 4px;font-size:24px;font-weight:600;">${headline}</h1>
+        <p style="margin:0 0 20px;font-size:14px;color:#a9c2b4;">Renewly re-scans your linked Gmail weekly. This is new since last time — review it so nothing slips by.</p>
+      </div>
+      ${table}
+      ${cancellationNote}
       <div style="padding:20px 28px 28px;">
         <a href="${dashboardUrl}" style="display:inline-block;background:#2f7a54;color:#eef5f0;text-decoration:none;font-size:14px;font-weight:600;padding:10px 22px;border-radius:999px;">Review on your dashboard</a>
         <p style="margin:16px 0 0;font-size:12px;color:#6f8a7c;">Weekly auto-scan is on in your Renewly settings — switch it off there any time.</p>
@@ -134,25 +147,28 @@ function renderDigestHtml(items, dashboardUrl) {
 }
 
 // The weekly auto-scan digest: what the background re-scan found, with a
-// review link. Only ever sent when there is something new.
-async function sendDigestEmail(to, items) {
+// review link. Only ever sent when there is something new — a new
+// subscription, a proposed cancellation, or both.
+async function sendDigestEmail(to, items, cancellationsFlagged = 0) {
   if (!isConfigured) {
     return { sent: false, error: 'Email not configured: set SMTP_USER and SMTP_PASS (Gmail app password) on the server.' };
   }
 
   const dashboardUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/dashboard`;
   const subject =
-    items.length === 1
-      ? items[0].needsDetails
-        ? `🔎 Renewly spotted ${items[0].name} — add the price to start tracking`
-        : `🔎 Renewly found a new subscription: ${items[0].name} (${inr.format(items[0].amount)})`
-      : `🔎 Renewly found ${items.length} new subscriptions in your inbox`;
+    items.length === 0
+      ? `🔎 Renewly noticed ${cancellationsFlagged === 1 ? 'a cancellation' : `${cancellationsFlagged} cancellations`} in your inbox`
+      : items.length === 1
+        ? items[0].needsDetails
+          ? `🔎 Renewly spotted ${items[0].name} — add the price to start tracking`
+          : `🔎 Renewly found a new subscription: ${items[0].name} (${inr.format(items[0].amount)})`
+        : `🔎 Renewly found ${items.length} new subscriptions in your inbox`;
 
   await transporter.sendMail({
     from: FROM,
     to,
     subject,
-    html: renderDigestHtml(items, dashboardUrl),
+    html: renderDigestHtml(items, dashboardUrl, cancellationsFlagged),
   });
 
   return { sent: true, to };

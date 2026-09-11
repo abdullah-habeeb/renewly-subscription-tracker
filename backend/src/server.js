@@ -10,7 +10,7 @@ const gmail = require('./services/gmail');
 const plaid = require('./services/plaid');
 const mailer = require('./services/mailer');
 const ai = require('./services/ai');
-const { demoDetections, bankDemoDetections } = require('./services/detector');
+const { demoDetections, demoCancellations, bankDemoDetections } = require('./services/detector');
 const { runReminders, scheduleReminders } = require('./jobs/reminders');
 const { runAutoRescans } = require('./jobs/autoscan');
 
@@ -76,7 +76,7 @@ app.get('/api/gmail/callback', async (req, res) => {
 app.post('/api/gmail/scan', requireAuth, async (req, res) => {
   try {
     if (!gmail.isConfigured) {
-      return res.json({ demo: true, items: demoDetections() });
+      return res.json({ demo: true, items: demoDetections(), cancellations: demoCancellations() });
     }
     const result = await gmail.scanInbox(req.uid);
     res.json({ demo: false, ...result });

@@ -131,6 +131,14 @@ function searchQueries(lookbackDays) {
   ];
 }
 
+// Cancellation confirmations rarely mention a price or come from the billing
+// keywords above ("Your membership has ended" has no receipt language), so
+// they need their own search — otherwise the query in searchQueries() never
+// even fetches the message.
+function cancellationSearchQuery(lookbackDays) {
+  return `newer_than:${lookbackDays}d subject:(cancelled OR canceled OR cancellation OR unsubscribed OR "no longer be charged" OR "membership has ended" OR "subscription has ended" OR "sorry to see you go")`;
+}
+
 // Decodes and flattens the readable text out of a Gmail message payload
 // (walking multipart MIME), stripping HTML tags. Capped — we only need
 // enough text to find a price, not the whole receipt.
@@ -191,15 +199,80 @@ function isNonChargeNotice(text) {
   );
 }
 
+// A *completed* cancellation, not a warning that one is coming — "will be
+// cancelled" (still active, still billing) is deliberately excluded here so
+// it can't flip a subscription still in its notice period to "cancelled"
+// early; that phrase is exactly what isNonChargeNotice() above screens out
+// of the charge path instead. Only past-tense/confirmed phrasing counts.
+function isCancellationNotice(text) {
+  return /(?:has been|successfully) cancell?ed|cancellation (?:is )?(?:confirmed|complete)|you(?:'ve| have) (?:successfully )?unsubscribed|your (?:membership|subscription|plan) has ended|no longer be charged|sorry to see you go|your access (?:has ended|will end)/i.test(
+    text,
+  );
+}
+
+// Pulls cancellation-confirmation emails out of one linked inbox, matched to
+// a merchant so the caller can propose marking that subscription cancelled.
+// A separate, smaller query and loop from scanAccountTransactions — subject
+// alone is almost always conclusive here ("Your Netflix membership has been
+// cancelled"), so this never needs the full-body fallback fetch that price
+// detection does.
+async function scanAccountCancellations(gmail, lookbackDays) {
+  const { data } = await gmail.users.messages.list({
+    userId: 'me',
+    q: cancellationSearchQuery(lookbackDays),
+    maxResults: 50,
+  });
+
+  const cancellations = [];
+  for (const m of data.messages || []) {
+    try {
+      const { data: msg } = await gmail.users.messages.get({
+        userId: 'me',
+        id: m.id,
+        format: 'metadata',
+        metadataHeaders: ['Subject', 'From', 'Date'],
+      });
+      const headers = Object.fromEntries(
+        (msg.payload.headers || []).map((h) => [h.name.toLowerCase(), h.value]),
+      );
+      const subject = headers.subject || '';
+      const from = headers.from || '';
+      const snippet = msg.snippet || '';
+      const text = `${subject} ${snippet}`;
+      if (!isCancellationNotice(text)) continue;
+
+      const merchant = identifyMerchant(`${subject} ${from}`);
+      if (!merchant) continue;
+
+      const date = new Date(Number(msg.internalDate)).toISOString().split('T')[0];
+      cancellations.push({ name: merchant.name, category: merchant.category, date, subject, internalDate: Number(msg.internalDate) });
+    } catch (err) {
+      console.warn(`Skipping cancellation candidate ${m.id}: ${err.message}`);
+    }
+  }
+
+  // Same merchant cancelled twice in the window (e.g. a duplicate notice) —
+  // keep only the most recent.
+  const byName = new Map();
+  for (const c of cancellations) {
+    const existing = byName.get(c.name);
+    if (!existing || c.internalDate > existing.internalDate) byName.set(c.name, c);
+  }
+  return [...byName.values()].map(({ internalDate, ...rest }) => rest);
+}
+
 // Pulls candidate billing transactions out of one linked inbox.
 async function scanAccountTransactions(account) {
   const client = oauthClient();
   client.setCredentials({ refresh_token: account.refreshToken });
   const gmail = google.gmail({ version: 'v1', auth: client });
 
+  const lookbackDays = scanLookbackDays(account.lastScanAt);
+  const cancellations = await scanAccountCancellations(gmail, lookbackDays);
+
   // Collect unique message ids across queries (bounded to keep scans fast).
   const ids = new Set();
-  for (const q of searchQueries(scanLookbackDays(account.lastScanAt))) {
+  for (const q of searchQueries(lookbackDays)) {
     const { data } = await gmail.users.messages.list({ userId: 'me', q, maxResults: 100 });
     for (const m of data.messages || []) ids.add(m.id);
     if (ids.size >= 200) break;
@@ -286,7 +359,7 @@ async function scanAccountTransactions(account) {
     }
   }
 
-  return { transactions, mentions: [...mentions.values()] };
+  return { transactions, mentions: [...mentions.values()], cancellations };
 }
 
 // The same service charged in two linked inboxes (family plans, forwarded
@@ -312,13 +385,35 @@ function mergeAccountCandidates(candidates) {
   return [...byName.values()];
 }
 
+// Same merchant cancelled per two linked inboxes — keep the more recent
+// cancellation date, union which inboxes it was seen in.
+function mergeCancellations(cancellations) {
+  const byName = new Map();
+  for (const cand of cancellations) {
+    const key = cand.name.toLowerCase();
+    const prev = byName.get(key);
+    if (!prev) {
+      byName.set(key, { ...cand, sourceAccounts: [...(cand.sourceAccounts || [])] });
+      continue;
+    }
+    const candWins = cand.date > prev.date;
+    const keep = candWins ? { ...cand, sourceAccounts: [...(cand.sourceAccounts || [])] } : prev;
+    const other = candWins ? prev : cand;
+    for (const addr of other.sourceAccounts || []) {
+      if (!keep.sourceAccounts.includes(addr)) keep.sourceAccounts.push(addr);
+    }
+    byName.set(key, keep);
+  }
+  return [...byName.values()];
+}
+
 // Google reports an expired/revoked refresh token as invalid_grant. With the
 // OAuth app in testing mode this happens naturally every ~7 days.
 const TOKEN_EXPIRED = /invalid_grant|invalid_rapt/i;
 
 async function scanAccount(uid, account) {
   try {
-    const { transactions, mentions } = await scanAccountTransactions(account);
+    const { transactions, mentions, cancellations } = await scanAccountTransactions(account);
     const candidates = detectRecurring(transactions);
 
     // Second pass: Claude fits emails the regex heuristics couldn't — unknown
@@ -368,6 +463,7 @@ async function scanAccount(uid, account) {
       address: account.address,
       ok: true,
       candidates: candidates.map((c) => ({ ...c, sourceAccounts: [account.address] })),
+      cancellations: cancellations.map((c) => ({ ...c, sourceAccounts: [account.address] })),
     };
   } catch (err) {
     const needsReauth = TOKEN_EXPIRED.test(err.message || '');
@@ -382,6 +478,7 @@ async function scanAccount(uid, account) {
         ? 'Access expired — reconnect this account'
         : err.message || 'Scan failed',
       candidates: [],
+      cancellations: [],
     };
   }
 }
@@ -404,6 +501,7 @@ async function scanInbox(uid) {
 
   return {
     items: mergeAccountCandidates(results.flatMap((r) => r.candidates)),
+    cancellations: mergeCancellations(results.flatMap((r) => r.cancellations)),
     accounts: results.map(({ address, ok, error, candidates }) => ({
       address,
       ok,
@@ -415,5 +513,6 @@ async function scanInbox(uid) {
 
 module.exports = {
   isConfigured, getAuthUrl, handleCallback, getStatus, disconnect, scanInbox,
-  extractBodyText, isBulkMail, isNonChargeNotice, mergeAccountCandidates, scanLookbackDays,
+  extractBodyText, isBulkMail, isNonChargeNotice, isCancellationNotice,
+  mergeAccountCandidates, mergeCancellations, scanLookbackDays,
 };

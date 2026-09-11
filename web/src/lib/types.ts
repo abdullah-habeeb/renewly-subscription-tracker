@@ -33,6 +33,15 @@ export interface Subscription {
   pendingPriceChange?: { newAmount: number; detectedAt: string } | null;
   /** Last flagged amount the user chose to ignore; suppresses re-flagging it. */
   dismissedPriceAmount?: number | null;
+  /** Missing/undefined means "active" — existing docs predate this field. */
+  status?: "active" | "cancelled";
+  cancelledAt?: string | null; // YYYY-MM-DD
+  cancellationSource?: "gmail" | "manual" | null;
+  cancellationEvidence?: string | null;
+  /** A scan found a cancellation confirmation for this merchant — awaiting the user's call. */
+  pendingCancellation?: { detectedAt: string; evidence: string; sourceAccounts?: string[] } | null;
+  /** Last flagged cancellation date the user dismissed; suppresses re-flagging it. */
+  dismissedCancellationDate?: string | null;
   createdAt?: unknown;
 }
 
@@ -109,6 +118,11 @@ export function calculateNextDueDate(startDate: string, cycle: BillingCycle): st
 /** A subscription whose till date has passed no longer bills or reminds. */
 export function isEnded(sub: Pick<Subscription, "endDate">): boolean {
   return Boolean(sub.endDate) && daysUntil(sub.endDate as string) < 0;
+}
+
+/** Explicitly cancelled (Gmail-detected or marked by hand) — distinct from a till-date lapsing on its own. */
+export function isCancelled(sub: Pick<Subscription, "status">): boolean {
+  return sub.status === "cancelled";
 }
 
 export function daysUntil(dateStr: string): number {

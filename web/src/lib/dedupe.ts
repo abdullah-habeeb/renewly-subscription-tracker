@@ -97,3 +97,56 @@ export function detectPriceChanges(
 
   return changes;
 }
+
+// ---------- Cancellation detection ----------
+
+export interface TrackedForCancellation {
+  id: string;
+  name: string;
+  status?: string;
+}
+
+export interface ScannedCancellation {
+  name: string;
+  date: string;
+  subject: string;
+  sourceAccounts?: string[];
+}
+
+export interface CancellationMatch {
+  subscriptionId: string;
+  name: string;
+  detectedAt: string;
+  evidence: string;
+  sourceAccounts?: string[];
+}
+
+/**
+ * A cancellation-confirmation email matching a tracked, still-*active*
+ * subscription proposes marking it cancelled — never applied silently. A
+ * subscription already cancelled is skipped so a duplicate notice (or a
+ * second cancellation email for the same merchant later) can't re-flag it.
+ */
+export function matchCancellations(
+  tracked: TrackedForCancellation[],
+  scanned: ScannedCancellation[],
+): CancellationMatch[] {
+  const byName = new Map(tracked.map((s) => [s.name.toLowerCase(), s]));
+  const matches: CancellationMatch[] = [];
+  const flagged = new Set<string>();
+
+  for (const c of scanned) {
+    const sub = byName.get(c.name.toLowerCase());
+    if (!sub || flagged.has(sub.id) || sub.status === "cancelled") continue;
+    flagged.add(sub.id);
+    matches.push({
+      subscriptionId: sub.id,
+      name: sub.name,
+      detectedAt: c.date,
+      evidence: c.subject,
+      sourceAccounts: c.sourceAccounts,
+    });
+  }
+
+  return matches;
+}

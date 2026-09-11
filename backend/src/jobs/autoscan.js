@@ -32,6 +32,7 @@ async function runAutoRescans() {
   const usersSnap = await db.collection('users').get();
   let usersScanned = 0;
   let found = 0;
+  let cancellationsFound = 0;
   let digestsSent = 0;
 
   for (const userDoc of usersSnap.docs) {
@@ -48,16 +49,22 @@ async function runAutoRescans() {
     if (freshest < RESCAN_EVERY_DAYS) continue;
 
     try {
-      const { items } = await gmail.scanInbox(uid);
+      const { items, cancellations } = await gmail.scanInbox(uid);
       usersScanned++;
-      const { stored, storedItems } = await detectedStore.storeCandidates(uid, items, 'gmail');
+      const { stored, storedItems, cancellationsFlagged } = await detectedStore.storeCandidates(
+        uid,
+        items,
+        'gmail',
+        cancellations,
+      );
       found += stored;
+      cancellationsFound += cancellationsFlagged;
 
-      if (stored > 0 && user.email && mailer.isConfigured) {
+      if ((stored > 0 || cancellationsFlagged > 0) && user.email && mailer.isConfigured) {
         try {
-          await mailer.sendDigestEmail(user.email, storedItems);
+          await mailer.sendDigestEmail(user.email, storedItems, cancellationsFlagged);
           digestsSent++;
-          console.log(`🔎 Auto-scan digest sent to ${user.email} (${stored} new)`);
+          console.log(`🔎 Auto-scan digest sent to ${user.email} (${stored} new, ${cancellationsFlagged} cancellation${cancellationsFlagged === 1 ? '' : 's'})`);
         } catch (err) {
           console.warn(`Digest email failed for ${user.email}:`, err.message);
         }
@@ -68,7 +75,7 @@ async function runAutoRescans() {
     }
   }
 
-  return { ok: true, usersScanned, found, digestsSent };
+  return { ok: true, usersScanned, found, cancellationsFound, digestsSent };
 }
 
 module.exports = { runAutoRescans, RESCAN_EVERY_DAYS };

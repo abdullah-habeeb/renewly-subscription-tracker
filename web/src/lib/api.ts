@@ -61,6 +61,15 @@ export interface ScanCandidate {
   needsDetails?: boolean;
 }
 
+/** A cancellation-confirmation email found for a merchant, not yet matched to a tracked subscription. */
+export interface ScanCancellation {
+  name: string;
+  category: string;
+  date: string;
+  subject: string;
+  sourceAccounts?: string[];
+}
+
 export interface PlaidStatus {
   configured: boolean; // Plaid API keys present on the server
   connected: boolean;
@@ -73,10 +82,12 @@ export const api = {
   gmailStatus: () => request<GmailStatus>("/gmail/status"),
   gmailAuthUrl: () => request<{ url?: string; demo: boolean }>("/gmail/auth-url"),
   gmailScan: () =>
-    request<{ demo: boolean; items: ScanCandidate[]; accounts?: ScanAccountResult[] }>(
-      "/gmail/scan",
-      { method: "POST" },
-    ),
+    request<{
+      demo: boolean;
+      items: ScanCandidate[];
+      accounts?: ScanAccountResult[];
+      cancellations?: ScanCancellation[];
+    }>("/gmail/scan", { method: "POST" }),
   gmailDisconnect: (address?: string) =>
     request<{ ok: boolean }>("/gmail/disconnect", {
       method: "POST",
